@@ -18,3 +18,4 @@ coverage/
 .medusa/
 apps/backend/.env
 apps/backend/src/modules/access/migrations/.snapshot-*.json
+apps/backend/.medusa/
