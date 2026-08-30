@@ -27,6 +27,12 @@ function requiredInProduction(name: string, devFallback: string): string {
 export default defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
+
+    // 🔴 مخطَّطٌ خاصٌّ بنا لا `public` — وهذا القرار **لا يُؤجَّل**
+    // (ADR-009). نحن نسكن مشروع Supabase مشتركاً مع AdCraft لأن الخطة
+    // المجانية تسمح بمشروعين اثنين. والمخطَّطُ المنفصل هو الفرقُ بين
+    // «نقلٌ بأمرٍ واحد» يوم الترقية و«فرزُ جداولَ متداخلة» في قاعدةٍ حيّة.
+    databaseSchema: process.env.DATABASE_SCHEMA || "zadim",
     redisUrl: process.env.REDIS_URL,
     http: {
       storeCors: process.env.STORE_CORS || "http://localhost:8000",
