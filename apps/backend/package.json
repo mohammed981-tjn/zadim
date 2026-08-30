@@ -1,0 +1,38 @@
+{
+  "name": "@zadim/backend",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Zadim commerce backend — Medusa v2 + custom Zadim modules",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "medusa build",
+    "dev": "medusa develop",
+    "start": "medusa start",
+    "db:migrate": "medusa db:migrate",
+    "db:generate": "medusa db:generate",
+    "seed": "medusa exec ./src/scripts/seed.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@medusajs/admin-sdk": "2.19.0",
+    "@medusajs/cli": "2.19.0",
+    "@medusajs/framework": "2.19.0",
+    "@medusajs/medusa": "2.19.0",
+    "@mikro-orm/core": "6.6.14",
+    "@mikro-orm/knex": "6.6.14",
+    "@mikro-orm/migrations": "6.6.14",
+    "@mikro-orm/postgresql": "6.6.14",
+    "awilix": "^8.0.1",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@medusajs/test-utils": "2.19.0",
+    "@types/node": "^20.19.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
