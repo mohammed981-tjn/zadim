@@ -103,6 +103,12 @@ jobs:
       - name: بوّابة المرحلة ٤ — السلّة و Checkout
         run: npx medusa exec ./src/scripts/verify-checkout.ts
 
+      # وبوّابةُ المرحلة ٥ تُشغَّل قبل الباقي أيضاً: **المصفوفةُ كاملةً**
+      # — كلُّ حالةٍ إلى كل حالة على القاعدة. وانكسارُها يعني أن الملغى
+      # صار يُحيا، وذاك لا ينتظر بقيةَ الفحوص.
+      - name: بوّابة المرحلة ٥ — آلةُ حالات الطلب
+        run: npx medusa exec ./src/scripts/verify-orders.ts
+
       - name: بوّابة المرحلة ١ — الصلاحيات
         run: npx medusa exec ./src/scripts/verify-access.ts
 

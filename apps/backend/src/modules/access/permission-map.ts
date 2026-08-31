@@ -101,6 +101,12 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // المستودعات، وذاك ما لا يُعرض لمن لا يقرأ المخزون أصلاً.
   { pattern: /^\/warehouse\/allocate(\/|$)/, methods: ["POST"], permission: "inventory.read" },
 
+  // ── وحدة orders ─────────────────────────────────────────────────
+  // كلاهما **قراءةٌ فقط**: جدولُ الانتقالات يُغيَّر بهجرةٍ تُراجَع لا
+  // بنداءٍ من لوحة، وصندوقُ الأحداث يكتبه مُطلِقُ القاعدة — ومسارُ
+  // كتابةٍ له بابُ تزويرٍ في سجلّ «ماذا وقع ومتى».
+  { pattern: /^\/order-flow\/(transitions|outbox)(\/|$)/, methods: ["GET"], permission: "orders.read" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },
