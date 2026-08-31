@@ -1,4 +1,5 @@
 import { loadEnv, defineConfig, Modules } from "@medusajs/framework/utils";
+import { discoverCarriers } from "./src/modules/carriers/discover";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 
@@ -84,6 +85,23 @@ export default defineConfig({
     // وصندوقُ أحداثٍ يُكتب في نفس معاملة التغيّر، وحرمةُ الفاتورة.
     { resolve: "./src/modules/orders" },
 
+    // ── الشحن ───────────────────────────────────────────────────────
+    // 🔴 **لا اسمَ ناقلٍ هنا.** المحوّلاتُ تُقرأ من مجلَّدها
+    // (`src/modules/carriers/`)، فإضافةُ ناقلٍ ثانٍ **لا تعدّل هذا
+    // الملفّ ولا غيرَه** — وهو نصُّ بوّابة المرحلة ٧. وسطرٌ واحدٌ باسمٍ
+    // هنا يكفي ليصير الوعدُ كذبةً صغيرة، ثم تكبر.
+    {
+      resolve: "@medusajs/medusa/fulfillment",
+      options: {
+        providers: [
+          // `manual_manual` يبقى: تستعمله البذرةُ والبوّابات، وهو
+          // مزوّدُ Medusa الافتراضيّ لا ناقلٌ من عندنا.
+          { resolve: "@medusajs/medusa/fulfillment-manual", id: "manual" },
+          ...discoverCarriers(),
+        ],
+      },
+    },
+
     // ── الدفع ───────────────────────────────────────────────────────
     // **الدفعُ عند الاستلام مزوّدٌ كامل الحقوق** لا استثناء
     // (`06-saudi-layer.md` §٢). وهو الوحيدُ الذي يمكن بناؤه اليوم:
@@ -102,6 +120,10 @@ export default defineConfig({
 
     // المرحلة ٦: سياسةُ COD ورفضاتُه، وحارسُ تكرار العمليات المالية.
     { resolve: "./src/modules/payments" },
+
+    // المرحلة ٧: اللقطُ والتغليفُ والتتبّع — ما لا تعرفه وحدةُ تنفيذ
+    // Medusa: من يلقط، وبأيّ ترتيبٍ يمشي، وماذا مسح.
+    { resolve: "./src/modules/fulfilment" },
 
     // 🔴 الفوترةُ الإلكترونية — **تُصمَّم اليوم لأن تأجيلها إعادةُ بناء**
     // (`06-saudi-layer.md` §١): سلسلةُ الفواتير لا تُضاف بأثرٍ رجعيّ.
