@@ -142,12 +142,63 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/access\/assignments(\/|$)/, methods: ["GET", "POST", "DELETE"], permission: "users.manage" },
   { pattern: /^\/access\/audit(\/|$)/, methods: ["GET"], permission: "audit.read" },
 
+  // ── 🔴 قراءةُ اللوحة — ما تناديه شاشاتُ Medusa نفسُها ──────────────
+  //
+  // كشفَه فحصٌ بالمتصفّح في المرحلة ٨، ولم تكشفه سبعُ مراحلَ من فحوص
+  // `curl`: كلُّها كانت تنادي **مساراتِنا** فتمرّ، ولوحةُ Medusa تنادي
+  // تسعةً وعشرين مساراً غيرَها **فتُردّ كلُّها بـ403** — حتى لمديرٍ عام.
+  // فالحارسُ كان يحرس متجراً لا يستطيع أحدٌ إدارتَه.
+  //
+  // والعلاجُ **ليس فتحَ القراءة كلِّها**: كلُّ قراءةٍ تسكن مع نطاقها،
+  // فمن يقرأ الطلبات يقرأ عملاءها، ومن يقرأ المنتجات يقرأ تصنيفاتها.
+  // ولا يبقى بلا نطاقٍ إلا **الإعداداتُ المحايدة** — المناطقُ والعملاتُ
+  // والقنواتُ وأجورُ الشحن — وهي ما يظهر في كل مُنتقٍ في كل شاشة،
+  // فأُفردت لها `settings.read` **الممنوحةُ لكل الأدوار**.
+  //
+  // ⚠️ ولاحظ الفرق: `settings.read` قراءةٌ للجميع، و`settings.manage`
+  // كتابةٌ للمدير العام وحده. وخلطُهما يجعل كلَّ موظّفٍ يغيّر عملةَ
+  // المتجر.
+  { pattern: /^\/(regions|stores|store|currencies|sales-channels|tax-regions|tax-rates|shipping-profiles|shipping-options|fulfillment-sets|fulfillment-providers|return-reasons|refund-reasons|notifications|workflows-executions|plugins|feature-flags)(\/|$)/, methods: ["GET"], permission: "settings.read" },
+  { pattern: /^\/(product-categories|product-collections|product-tags|product-types|price-lists)(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/(customers|customer-groups|claims|exchanges)(\/|$)/, methods: ["GET"], permission: "orders.read" },
+  { pattern: /^\/reservations(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/(promotions|campaigns)(\/|$)/, methods: ["GET"], permission: "promotions.manage" },
+  { pattern: /^\/api-keys(\/|$)/, methods: ["GET"], permission: "settings.manage" },
+  // قائمةُ المستخدمين تكشف من يعمل في المتجر وأدوارَهم: تُقرأ بصلاحية
+  // إدارتهم. و«من أنا» مستثناةٌ أصلاً — لا تكشف إلا صاحبَها.
+  { pattern: /^\/users(\/|$)/, methods: ["GET"], permission: "users.manage" },
+
   // ── النظام ──────────────────────────────────────────────────────
   { pattern: /^\/users(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "users.manage" },
   { pattern: /^\/api-keys(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "settings.manage" },
   { pattern: /^\/sales-channels(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "settings.manage" },
   { pattern: /^\/store(\/|$)/, methods: ["POST", "PUT", "PATCH"], permission: "settings.manage" },
   { pattern: /^\/tax-(regions|rates)(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "settings.manage" },
+];
+
+/**
+ * 🔴 **ما تناديه لوحةُ Medusa لتعمل** — قائمةٌ تُفحص في كل دفعة.
+ *
+ * سبعُ مراحلَ مرّت وكلُّ فحوصها بـ`curl` على **مساراتنا**، فمرّت. ثم
+ * فُتحت اللوحةُ في متصفّحٍ فإذا تسعةٌ وعشرون مساراً من مساراتها تُردّ
+ * بـ403 — **حتى لمديرٍ عام**. فكان الحارسُ يحرس متجراً لا يُدار.
+ *
+ * وهذه القائمةُ تمنع تكرارَه: البوّابةُ تتأكّد أن **لكلٍّ منها قاعدةً**،
+ * فلا يسقط واحدٌ في الرفض الافتراضيّ صامتاً.
+ *
+ * ⚠️ **وهي ليست ضماناً**: ترقيةُ Medusa قد تضيف شاشةً تنادي مساراً
+ * جديداً ليس هنا. والعلامةُ حينها ظاهرةٌ لا صامتة — الشاشةُ لا تفتح —
+ * ويُضاف المسارُ بنطاقه.
+ */
+export const ADMIN_CONSOLE_READS: string[] = [
+  "/regions", "/stores", "/currencies", "/sales-channels",
+  "/tax-regions", "/tax-rates",
+  "/shipping-profiles", "/shipping-options", "/fulfillment-sets", "/fulfillment-providers",
+  "/return-reasons", "/refund-reasons", "/notifications", "/workflows-executions", "/plugins",
+  "/product-categories", "/product-collections", "/product-tags", "/product-types", "/price-lists",
+  "/customers", "/customer-groups", "/claims", "/exchanges",
+  "/reservations", "/promotions", "/campaigns", "/api-keys", "/users",
+  "/products", "/orders", "/inventory-items", "/stock-locations", "/returns", "/payments",
 ];
 
 /**

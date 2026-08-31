@@ -1,6 +1,12 @@
 import { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
-import { ruleFor, isExempt, readField, ADMIN_ROUTE_RULES } from "../modules/access/permission-map";
+import {
+  ruleFor,
+  isExempt,
+  readField,
+  ADMIN_ROUTE_RULES,
+  ADMIN_CONSOLE_READS,
+} from "../modules/access/permission-map";
 import { ACCESS_MODULE } from "../modules/access";
 import type AccessModuleService from "../modules/access/service";
 
@@ -105,6 +111,26 @@ export default async function verifyGuard({ container }: ExecArgs) {
   !big.allowed && big.code === "LIMIT_EXCEEDED"
     ? pass("POST /payments/:id/refund بـ٥٠١ ر.س ⇒ LIMIT_EXCEEDED")
     : fail("استردادٌ فوق السقف مرّ");
+
+  // ── 🔴 لوحةُ Medusa تعمل ──────────────────────────────────────
+  // كشفَ فحصٌ بالمتصفّح في المرحلة ٨ أن ٢٩ مساراً من مسارات اللوحة
+  // كانت تُردّ بـ403 **حتى لمديرٍ عام** — فكان الحارسُ يحرس متجراً لا
+  // يُدار. وهذا يمنع تكرارَه.
+  logger.info("== مساراتُ اللوحة لا تسقط في الرفض الافتراضيّ ==");
+  const unmapped = ADMIN_CONSOLE_READS.filter(
+    (p) => !isExempt(p) && ruleFor(p, "GET") === null
+  );
+  unmapped.length === 0
+    ? pass(`${ADMIN_CONSOLE_READS.length} مساراً من مسارات اللوحة، لكلٍّ قاعدةٌ للقراءة`)
+    : fail(`مساراتٌ تسقط في الرفض الافتراضيّ: ${unmapped.join(" · ")}`);
+
+  // ولا تُخلط القراءةُ بالكتابة: `settings.read` للجميع
+  // و`settings.manage` للمدير العام — وخلطُهما يجعل كلَّ موظّفٍ يغيّر
+  // عملةَ المتجر.
+  ruleFor("/regions", "GET")?.permission === "settings.read" &&
+  ruleFor("/tax-rates", "POST")?.permission === "settings.manage"
+    ? pass("وقراءةُ الإعدادات مفصولةٌ عن كتابتها")
+    : fail("قراءةُ الإعدادات وكتابتُها على صلاحيةٍ واحدة");
 
   // ── تناسقُ الخريطة مع الصلاحيات المبذورة ───────────────────────
   // قاعدةٌ تشير إلى صلاحيةٍ غير موجودة تُغلق المسار على **الجميع**

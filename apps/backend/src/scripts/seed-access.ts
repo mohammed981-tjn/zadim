@@ -57,6 +57,8 @@ const PERMISSIONS: Array<[slug: string, domain: string, description: string]> = 
   // التقارير
   ["reports.sales", "reports", "تقارير المبيعات"],
   ["reports.margin", "reports", "تقرير الهامش والتكلفة"],
+  // إعداداتُ المتجر — قراءةٌ محايدة
+  ["settings.read", "system", "قراءةُ إعدادات المتجر العامّة (المناطق والعملات والقنوات وأجور الشحن)"],
   // النظام
   ["users.manage", "system", "إدارة المستخدمين"],
   ["roles.manage", "system", "إدارة الأدوار"],
@@ -86,6 +88,7 @@ const ROLES: Array<{
     slug: "operations",
     name_ar: "مدير التشغيل",
     permissions: [
+      "settings.read",
       "products.read", "inventory.read", "orders.read", "orders.edit_items",
       "orders.cancel", "fulfilment.pick", "fulfilment.pack", "fulfilment.ship",
       "shipping.rates.manage", "payments.read", "payments.capture",
@@ -96,6 +99,7 @@ const ROLES: Array<{
     slug: "inventory",
     name_ar: "مدير المخزون",
     permissions: [
+      "settings.read",
       "products.read", "inventory.read", "inventory.adjust", "inventory.stocktake",
       "locations.manage", "orders.read", "fulfilment.pick", "fulfilment.pack",
       "fulfilment.ship", "returns.inspect", "suppliers.manage",
@@ -111,6 +115,7 @@ const ROLES: Array<{
     slug: "product",
     name_ar: "مدير المنتجات",
     permissions: [
+      "settings.read",
       "products.read", "products.write", "products.price.update",
       "products.bulk_update", "inventory.read", "reports.sales",
     ],
@@ -123,6 +128,7 @@ const ROLES: Array<{
     slug: "marketing",
     name_ar: "مدير التسويق",
     permissions: [
+      "settings.read",
       "products.read", "promotions.manage", "coupons.manage", "cms.manage",
       "campaigns.send", "reports.sales",
     ],
@@ -134,6 +140,7 @@ const ROLES: Array<{
     slug: "support",
     name_ar: "موظف الدعم",
     permissions: [
+      "settings.read",
       "products.read", "inventory.read", "orders.read", "orders.cancel",
       "payments.read", "payments.refund", "store_credit.issue", "returns.approve",
     ],
@@ -148,6 +155,7 @@ const ROLES: Array<{
     slug: "finance",
     name_ar: "المالية",
     permissions: [
+      "settings.read",
       "orders.read", "inventory.read", "payments.read", "payments.capture",
       "payments.refund", "store_credit.issue", "purchase_orders.approve",
       "reports.sales", "reports.margin", "audit.read",
