@@ -77,6 +77,12 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/catalog\/attributes(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/attributes(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "products.write" },
   { pattern: /^\/catalog\/images(\/|$)/, methods: ["POST"], permission: "products.write" },
+  // SEO والتحويلاتُ أدواتُ تسويقٍ وبحث: بيتُها عند مدير التسويق —
+  // وتغييرُ عنوانِ صفحةٍ في جوجل قرارُ حملةٍ لا قرارُ كتالوج.
+  { pattern: /^\/catalog\/seo(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/catalog\/seo(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
+  { pattern: /^\/catalog\/redirects(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/catalog\/redirects(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
 

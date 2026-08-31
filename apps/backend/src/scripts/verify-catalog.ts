@@ -230,6 +230,121 @@ export default async function verifyCatalog({ container }: ExecArgs) {
     pass("ملفٌّ ليس صورةً يُرفض");
   }
 
+  // ── ٩) SEO (بند ٣٨) ───────────────────────────────────────────
+  logger.info("== SEO والتحويلات ==");
+  const iphone = (products as any[]).find((p) => p.handle === "iphone-15-pro");
+
+  if (iphone) {
+    // الارتداد: لا سطرَ محفوظ ⇒ يُبنى من الاسم والوصف.
+    //
+    // ⚠️ بمعرّفٍ لا وجودَ له لا بمعرّف الـiPhone: الفحصُ أدناه **يكتب**
+    // سطرَ SEO لآيفون، فلو استعملتُه هنا لنجح الفحصُ أوّلَ مرّة وسقط
+    // في كل إعادة — واختبارٌ يمرّ مرّةً واحدة يسقط في CI ثم يُتجاهَل.
+    const generated = await catalog.getSeo({
+      entity: "product",
+      entity_id: `never-stored-${Date.now()}`,
+      fallback: { title: iphone.title, description: iphone.description },
+    });
+    generated.is_generated && generated.title === iphone.title
+      ? pass(`منتجٌ بلا SEO ⇒ عنوانٌ مبنيّ «${generated.title}»`)
+      : fail(`الارتدادُ لم يعمل: ${JSON.stringify(generated)}`);
+
+    // القصُّ عند حدّ كلمةٍ لا وسطَها.
+    const longDesc = "جوال ".repeat(60);
+    const cut = await catalog.getSeo({
+      entity: "product",
+      entity_id: "no-such-id",
+      fallback: { description: longDesc },
+    });
+    const d = cut.description ?? "";
+    // التأكيدُ الصحيح: النصُّ المقصوص (بلا «…») **بادئةٌ** من الأصل،
+    // والحرفُ التالي له في الأصل **مسافة** — أي أن القطع وقع بين
+    // كلمتين لا داخل كلمة. وكان تأكيدي أوّلاً `!/\S…$/` وهو معكوس:
+    // القطعُ السليم ينتهي بحرفٍ غيرِ مسافة (آخرِ كلمةٍ كاملة) قبل «…».
+    const body = d.replace(/…$/, "");
+    const source = longDesc.replace(/\s+/g, " ").trim();
+    const cutAtWordBoundary =
+      source.startsWith(body) &&
+      (source.length === body.length || source[body.length] === " ");
+    d.length <= 161 && d.endsWith("…") && cutAtWordBoundary
+      ? pass(`وصفٌ طويلٌ يُقصّ عند ${d.length} حرفاً وبين كلمتين لا داخل كلمة`)
+      : fail(`القصُّ أخطأ: ${d.length} حرفاً · بين كلمتين=${cutAtWordBoundary} · «${d.slice(-15)}»`);
+
+    // المحفوظُ يغلب المبنيّ.
+    await catalog.setSeo({
+      entity: "product",
+      entity_id: iphone.id,
+      title: "آيفون ١٥ برو — أفضل سعر في السعودية",
+      description: "اشترِ آيفون ١٥ برو بضمانٍ رسميّ وتوصيلٍ سريع.",
+    });
+    const stored = await catalog.getSeo({
+      entity: "product",
+      entity_id: iphone.id,
+      fallback: { title: iphone.title },
+    });
+    !stored.is_generated && stored.title?.includes("أفضل سعر")
+      ? pass("المحفوظُ يغلب المبنيّ")
+      : fail(`المحفوظ لم يغلب: ${JSON.stringify(stored)}`);
+
+    // تنظيف: الفحصُ لا يترك أثراً في القاعدة. وفحصٌ يُلوّث ما يفحصه
+    // يُفسد الفحصَ التالي، وأسوأُ منه أن يُفسد بياناتِ تطويرٍ يعتمدها غيرُه.
+    const [written] = await catalog.listSeoMetas({
+      entity: "product",
+      entity_id: iphone.id,
+      locale: "ar",
+    });
+    if (written) await catalog.deleteSeoMetas([(written as any).id]);
+  }
+
+  // ── التحويلات ─────────────────────────────────────────────────
+  const suffix = Date.now();
+  const A = `/p/a-${suffix}`, B = `/p/b-${suffix}`, C = `/p/c-${suffix}`;
+
+  await catalog.addRedirect({ from_path: A, to_path: B });
+  await catalog.addRedirect({ from_path: B, to_path: C });
+
+  // 🔴 طيُّ السلسلة: بعد أ←ب ثم ب←ج يجب أن تصير **أ←ج مباشرةً**.
+  // وكلُّ قفزةٍ زائدة يُضعِف جوجل الثقةَ عندها، والزائرُ ينتظر رحلتين.
+  const resolvedA = await catalog.resolveRedirect(A);
+  resolvedA?.to_path === C
+    ? pass(`طيُّ السلسلة: ${A} ⇒ ${C} مباشرةً (لا قفزتان)`)
+    : fail(`السلسلة لم تُطوَ: ${A} ⇒ ${resolvedA?.to_path}`);
+
+  // حلقة: ج←أ بعدهما تُرفض.
+  try {
+    await catalog.addRedirect({ from_path: C, to_path: A });
+    fail("حلقةُ تحويلٍ قُبلت");
+  } catch {
+    pass("حلقةُ تحويل (ج⇒أ) تُرفض");
+  }
+
+  // تحويلٌ إلى النفس يُرفض.
+  try {
+    await catalog.addRedirect({ from_path: A, to_path: A });
+    fail("تحويلٌ إلى النفس قُبل");
+  } catch {
+    pass("تحويلٌ إلى النفس يُرفض");
+  }
+
+  // توحيدُ المسار: بشرطةٍ لاحقةٍ أو باستعلام ⇒ نفسُ التحويل.
+  const viaSlash = await catalog.resolveRedirect(`${A}/`);
+  const viaQuery = await catalog.resolveRedirect(`${A}?utm_source=x`);
+  viaSlash?.to_path === C && viaQuery?.to_path === C
+    ? pass("المسارُ يُوحَّد: شرطةٌ لاحقة واستعلامٌ لا يكسران التحويل")
+    : fail(`التوحيد أخفق: «/»⇒${viaSlash?.to_path} «?»⇒${viaQuery?.to_path}`);
+
+  // العدّاد يزيد — وهو ما يُري المديرَ أي روابطَ قديمة ما زالت حيّة.
+  const [counted] = await catalog.listUrlRedirects({ from_path: A });
+  ((counted as any)?.hits ?? 0) >= 3
+    ? pass(`عدّادُ الإصابات يزيد (${(counted as any).hits})`)
+    : fail(`العدّاد لم يزد: ${(counted as any)?.hits}`);
+
+  // تنظيف
+  const mine = (await catalog.listUrlRedirects({})).filter((r: any) =>
+    String(r.from_path).includes(String(suffix))
+  );
+  if (mine.length) await catalog.deleteUrlRedirects(mine.map((r: any) => r.id));
+
   if (failures) throw new Error(`[zadim] سقط ${failures} فحصاً من فحوص الكتالوج.`);
   logger.info("✅ كلُّ فحوص المرحلة ٢ اجتازت.");
 }

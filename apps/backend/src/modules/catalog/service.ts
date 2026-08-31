@@ -4,6 +4,8 @@ import {
   CategoryAttribute,
   ProductAttributeValue,
   SearchSynonym,
+  SeoMeta,
+  UrlRedirect,
 } from "./models";
 import { expandWithSynonyms, normalizeArabic } from "./arabic";
 
@@ -26,6 +28,8 @@ class CatalogModuleService extends MedusaService({
   CategoryAttribute,
   ProductAttributeValue,
   SearchSynonym,
+  SeoMeta,
+  UrlRedirect,
 }) {
   /**
    * فلاترُ تصنيفٍ بعينه — مولَّدةً من خصائصه وقيمها الفعلية.
@@ -112,6 +116,134 @@ class CatalogModuleService extends MedusaService({
   }
 
   /**
+   * بياناتُ SEO لكيان — **مع ارتدادٍ مبنيّ لا فراغ**.
+   *
+   * 🔴 صفحةٌ بلا `<title>` تظهر في جوجل باسم الرابط، وبلا وصفٍ يقتطع
+   * جوجل سطراً عشوائياً من النصّ. فالارتدادُ ليس ترفاً: **أكثرُ
+   * المنتجات لن يكتب لها أحدٌ SEO يدوياً أبداً**، والمبنيُّ آلياً من
+   * الاسم والوصف أفضلُ من لا شيء بمراحل.
+   */
+  async getSeo(input: {
+    entity: "product" | "category" | "brand" | "page";
+    entity_id: string;
+    locale?: string;
+    fallback?: { title?: string; description?: string };
+  }) {
+    const locale = input.locale ?? "ar";
+    const [stored] = await this.listSeoMetas({
+      entity: input.entity,
+      entity_id: input.entity_id,
+      locale,
+    });
+
+    const title = (stored as any)?.title || input.fallback?.title || null;
+    const description =
+      (stored as any)?.description ||
+      // الوصفُ المرتدّ يُقتطع عند ١٦٠ حرفاً — وهو ما يعرضه جوجل. وقطعُه
+      // عند حدّ كلمةٍ لا وسطَها: «...جوال آيفون ١٥ بر» تبدو عطلاً.
+      truncateAtWord(input.fallback?.description ?? "", 160) ||
+      null;
+
+    return {
+      title,
+      description,
+      canonical_url: (stored as any)?.canonical_url ?? null,
+      og_image: (stored as any)?.og_image ?? null,
+      structured_data: (stored as any)?.structured_data ?? null,
+      no_index: (stored as any)?.no_index ?? false,
+      is_generated: !stored,
+      locale,
+    };
+  }
+
+  async setSeo(input: {
+    entity: "product" | "category" | "brand" | "page";
+    entity_id: string;
+    locale?: string;
+    title?: string | null;
+    description?: string | null;
+    canonical_url?: string | null;
+    og_image?: string | null;
+    no_index?: boolean;
+  }) {
+    const locale = input.locale ?? "ar";
+    const [existing] = await this.listSeoMetas({
+      entity: input.entity,
+      entity_id: input.entity_id,
+      locale,
+    });
+    const payload = { ...input, locale };
+    return existing
+      ? await this.updateSeoMetas({ id: (existing as any).id, ...payload })
+      : await this.createSeoMetas(payload);
+  }
+
+  /**
+   * يُنشئ تحويلاً — **ويطوي السلاسل**.
+   *
+   * 🔴 المشكلة التي يحلّها: تغيّر `slug` مرّتين ⇒ أ←ب ثم ب←ج. والزائرُ
+   * على «أ» يقفز قفزتين، وجوجل **يُضعِف الثقة مع كل قفزة**. فالطيُّ
+   * يجعلها أ←ج مباشرةً.
+   *
+   * ويمنع الحلقة: ج←أ بعدهما تُرفض بدل أن تُنتج دوراناً لا ينتهي.
+   */
+  async addRedirect(input: { from_path: string; to_path: string; status?: 301 | 302 }) {
+    const from = normalizePath(input.from_path);
+    let to = normalizePath(input.to_path);
+
+    if (from === to) {
+      throw new Error("[zadim] مسارٌ يحوّل إلى نفسه — حلقةٌ لا نهائية.");
+    }
+
+    // اتبع سلسلةَ الوجهة إلى نهايتها، بسقفٍ يمنع الدوران الأبديّ لو
+    // تسلّلت حلقةٌ من بياناتٍ قديمة.
+    const seen = new Set<string>([from, to]);
+    for (let hop = 0; hop < 10; hop++) {
+      const [next] = await this.listUrlRedirects({ from_path: to });
+      if (!next) break;
+      const target = normalizePath((next as any).to_path);
+      if (seen.has(target)) {
+        throw new Error(`[zadim] التحويل يُنتج حلقة: ${from} ⇒ ${target}`);
+      }
+      seen.add(target);
+      to = target;
+    }
+
+    if (from === to) {
+      throw new Error("[zadim] بعد طيّ السلسلة صار المسار يحوّل إلى نفسه.");
+    }
+
+    // وكلُّ ما كان يحوّل إلى `from` يُعاد توجيهه إلى `to` — فلا يبقى
+    // زائرٌ يقفز قفزتين.
+    const incoming = await this.listUrlRedirects({ to_path: from });
+    for (const r of incoming as any[]) {
+      if (normalizePath(r.from_path) !== to) {
+        await this.updateUrlRedirects({ id: r.id, to_path: to });
+      }
+    }
+
+    const [existing] = await this.listUrlRedirects({ from_path: from });
+    const payload = { from_path: from, to_path: to, status: input.status ?? 301 };
+    return existing
+      ? await this.updateUrlRedirects({ id: (existing as any).id, ...payload })
+      : await this.createUrlRedirects(payload);
+  }
+
+  /** يبحث عن تحويلٍ لمسار، ويعدّ الإصابة. */
+  async resolveRedirect(path: string) {
+    const [redirect] = await this.listUrlRedirects({ from_path: normalizePath(path) });
+    if (!redirect) return null;
+    await this.updateUrlRedirects({
+      id: (redirect as any).id,
+      hits: ((redirect as any).hits ?? 0) + 1,
+    });
+    return {
+      to_path: (redirect as any).to_path,
+      status: (redirect as any).status,
+    };
+  }
+
+  /**
    * يوسّع استعلامَ المستخدم بمرادفاته المطبَّعة.
    *
    * ويُعيد **مصفوفةً دائماً** فيها الاستعلامُ المطبَّع على الأقل —
@@ -127,6 +259,22 @@ class CatalogModuleService extends MedusaService({
       }))
     );
   }
+}
+
+/** يقصّ عند حدّ كلمةٍ لا وسطَها — القصُّ وسطَ كلمةٍ يبدو عطلاً. */
+function truncateAtWord(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
+}
+
+/** مسارٌ موحَّد: بشرطةٍ بادئة، بلا شرطةٍ لاحقة، بلا استعلام. */
+function normalizePath(path: string): string {
+  const p = String(path).split("?")[0].split("#")[0].trim();
+  const withSlash = p.startsWith("/") ? p : `/${p}`;
+  return withSlash.length > 1 ? withSlash.replace(/\/+$/, "") : withSlash;
 }
 
 export default CatalogModuleService;
