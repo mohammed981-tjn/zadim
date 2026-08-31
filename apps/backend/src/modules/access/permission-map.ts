@@ -107,6 +107,20 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // كتابةٍ له بابُ تزويرٍ في سجلّ «ماذا وقع ومتى».
   { pattern: /^\/order-flow\/(transitions|outbox)(\/|$)/, methods: ["GET"], permission: "orders.read" },
 
+  // ── وحدتا payments و zatca ──────────────────────────────────────
+  // السياسةُ إعدادُ متجرٍ لا قرارُ طلب: حدُّ COD يوازن بيعاً بشحنتين،
+  // ويضبطه من يملك إعدادات المتجر. **والرفضةُ واقعةُ تشغيل** يقيّدها من
+  // يتابع الطلبات — ولا مسارَ لحذفها أصلاً.
+  { pattern: /^\/payments\/cod-policy(\/|$)/, methods: ["GET"], permission: "payments.read" },
+  { pattern: /^\/payments\/cod-policy(\/|$)/, methods: ["POST", "PATCH"], permission: "settings.manage" },
+  { pattern: /^\/payments\/cod-refusals(\/|$)/, methods: ["GET"], permission: "payments.read" },
+  { pattern: /^\/payments\/cod-refusals(\/|$)/, methods: ["POST"], permission: "orders.edit_items" },
+  // الفواتيرُ سجلٌّ ماليّ: تُقرأ بصلاحية المال. **ولا مسارَ إصدارٍ
+  // يدويّ** — الإصدارُ يقع مع الطلب تحت قفلٍ يُسلسل التسلسل.
+  { pattern: /^\/zatca\/invoices(\/|$)/, methods: ["GET"], permission: "payments.read" },
+  { pattern: /^\/zatca\/settings(\/|$)/, methods: ["GET"], permission: "payments.read" },
+  { pattern: /^\/zatca\/settings(\/|$)/, methods: ["POST", "PATCH"], permission: "settings.manage" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },
