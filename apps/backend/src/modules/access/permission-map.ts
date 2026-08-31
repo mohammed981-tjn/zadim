@@ -86,6 +86,21 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
 
+  // ── وحدة warehouse ──────────────────────────────────────────────
+  // الدفترُ **للقراءة فقط**: لا مسارَ كتابةٍ له أصلاً — يكتبه مُطلِقُ
+  // القاعدة. ولو وُجد مسارٌ لكان بابَ تزويرٍ في السجلّ الذي يُحتكم إليه.
+  { pattern: /^\/warehouse\/movements(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/warehouse\/alerts(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  // الحدُّ يضبطه من يملك المستودعات: رفعُه يُسكت تنبيهاً، وخفضُه يُغرق
+  // الفريقَ بتنبيهاتٍ فيتجاهلها — كلاهما قرارُ تشغيلٍ لا قرارُ قراءة.
+  { pattern: /^\/warehouse\/alert-rules(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/warehouse\/alert-rules(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "locations.manage" },
+  { pattern: /^\/warehouse\/profiles(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/warehouse\/profiles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "locations.manage" },
+  // معاينةُ الخطة قراءةٌ لا تحجز شيئاً — لكنها تكشف توزّعَ المخزون على
+  // المستودعات، وذاك ما لا يُعرض لمن لا يقرأ المخزون أصلاً.
+  { pattern: /^\/warehouse\/allocate(\/|$)/, methods: ["POST"], permission: "inventory.read" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },
