@@ -70,6 +70,15 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/promotions(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "promotions.manage" },
   { pattern: /^\/campaigns(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "coupons.manage" },
 
+  // ── وحدة catalog ────────────────────────────────────────────────
+  // الخصائصُ جزءٌ من الكتالوج: من يملك المنتجات يملكها. والمرادفاتُ
+  // أداةُ تسويقٍ وبحث — بيتُها عند مدير التسويق لا عند مدير المنتجات،
+  // فهو من يقرأ تقرير «بحثٌ بلا نتيجة».
+  { pattern: /^\/catalog\/attributes(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/catalog\/attributes(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "products.write" },
+  { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },

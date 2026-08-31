@@ -61,5 +61,22 @@ export default defineConfig({
     //
     // المرحلة ١ تبدأ بـ access وحدها — بند ٤٥ وبند ٤٦.
     { resolve: "./src/modules/access" },
+
+    // المرحلة ٢: الخصائص والفلاتر المتولّدة وتطبيعُ العربية ومرادفاتُ
+    // البحث — ما لا تقدّمه وحدةُ منتجات Medusa.
+    { resolve: "./src/modules/catalog" },
+
+    // ── البحث ───────────────────────────────────────────────────────
+    // مزوّدٌ محليّ على Orama (يدعم `arabic`). و**واجهةُ المزوّد هي
+    // العَتَبة** (ADR-006 المُعدَّل): الانتقالُ إلى Meilisearch يوم يضيق
+    // المحليُّ يكون مزوّداً جديداً لا إعادةَ بناء.
+    {
+      resolve: "@medusajs/medusa/search",
+      options: {
+        providers: [
+          { resolve: "@medusajs/medusa/search-local", id: "local" },
+        ],
+      },
+    },
   ],
 });
