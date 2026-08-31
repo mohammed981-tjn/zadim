@@ -89,12 +89,19 @@ jobs:
         run: |
           npx medusa exec ./src/scripts/seed-access.ts
           npx medusa exec ./src/scripts/seed-catalog.ts
+          npx medusa exec ./src/scripts/seed-commerce.ts
 
       # 🔴 البوّابة. وتُشغَّل **أوّلاً** لا آخراً: إن انكسر منعُ البيع
       # الزائد فذاك أخطرُ ما يمكن أن ينكسر، ولا معنى لانتظار بقية
       # الفحوص لنعرف.
       - name: بوّابة المرحلة ٣ — التزاحم والمخزون
         run: npx medusa exec ./src/scripts/verify-inventory.ts
+
+      # 🔴 والبوّابةُ الثانية خطراً: «يُرفض **قبل أخذ المال**». وتُقاس
+      # بعدّ الطلبات قبل الرفض وبعده — رفضٌ يُعيد رسالةً ويُنشئ الطلبَ
+      # خلفها أسوأُ من قبولٍ صريح، لأنه يبدو آمناً.
+      - name: بوّابة المرحلة ٤ — السلّة و Checkout
+        run: npx medusa exec ./src/scripts/verify-checkout.ts
 
       - name: بوّابة المرحلة ١ — الصلاحيات
         run: npx medusa exec ./src/scripts/verify-access.ts
