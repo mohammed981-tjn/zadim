@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { CATALOG_MODULE } from "../modules/catalog";
 import type CatalogModuleService from "../modules/catalog/service";
 import { normalizeArabic, expandWithSynonyms } from "../modules/catalog/arabic";
+import { processProductImage, IMAGE_SIZES } from "../modules/catalog/images";
 
 /**
  * بوّابةُ المرحلة ٢ (`07-roadmap.md`).
@@ -161,6 +162,73 @@ export default async function verifyCatalog({ container }: ExecArgs) {
   isolated.includes("ايفون") && isolated.includes("iphone")
     ? pass("expandWithSynonyms خالصةٌ وتعمل بلا قاعدة")
     : fail(`التوسيع المعزول أخطأ: ${JSON.stringify(isolated)}`);
+
+  // ── ٨) الصور (بند ٥٥) ─────────────────────────────────────────
+  logger.info("== معالجة الصور ==");
+  const sharp = (await import("sharp")).default;
+
+  // صورةٌ واقعية بضجيجٍ عشوائيّ — لا لونٌ مسطّح: اللونُ المسطّح يُعطي
+  // نسبَ ضغطٍ خياليةً تُخفي أداءً حقيقياً سيّئاً.
+  const W = 2400, H = 1600;
+  const raw = Buffer.alloc(W * H * 3);
+  for (let i = 0; i < raw.length; i++) raw[i] = (i * 2654435761) % 256;
+  const photo = await sharp(raw, { raw: { width: W, height: H, channels: 3 } })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+
+  const images = await processProductImage(photo);
+
+  images.length === IMAGE_SIZES.length
+    ? pass(`رفعةٌ واحدة ⇒ ${images.length} أحجام`)
+    : fail(`عددُ الأحجام ${images.length} لا ${IMAGE_SIZES.length}`);
+
+  images.every((i) => i.mime === "image/webp")
+    ? pass("كلُّها WebP")
+    : fail("نسخةٌ ليست WebP");
+
+  new Set(images.map((i) => i.width)).size === images.length
+    ? pass(`أبعادٌ متفاوتة: ${images.map((i) => `${i.width}×${i.height}`).join(" · ")}`)
+    : fail("أحجامٌ متطابقة الأبعاد");
+
+  const biggest = images[images.length - 1];
+  biggest.bytes < photo.byteLength
+    ? pass(`توفير ${(100 - (biggest.bytes / photo.byteLength) * 100).toFixed(0)}٪ على أكبر نسخة (${(photo.byteLength / 1048576).toFixed(1)}م ⇒ ${(biggest.bytes / 1024).toFixed(0)}ك)`)
+    : fail("أكبرُ نسخةٍ أكبرُ من الأصل");
+
+  // النِّسَبُ محفوظة: صورةٌ 3:2 تبقى 3:2 في كل حجم — والتشويهُ في صور
+  // المنتجات شكوى «الصورة لا تشبه البضاعة».
+  const ratios = images.map((i) => (i.width / i.height).toFixed(2));
+  new Set(ratios).size === 1
+    ? pass(`نسبةُ الأبعاد محفوظة في الأحجام كلِّها (${ratios[0]})`)
+    : fail(`النِّسَب اختلفت: ${ratios.join(" · ")}`);
+
+  // لا تكبير: صورةٌ أصغرُ من أكبر حجمٍ لا تُمدَّد — التمديدُ ضبابيةٌ
+  // أكبرُ حجماً لا جودةٌ أعلى.
+  const small = await sharp({
+    create: { width: 400, height: 300, channels: 3, background: { r: 0, g: 0, b: 255 } },
+  }).png().toBuffer();
+  const smallOut = await processProductImage(small);
+  smallOut.every((i) => i.width <= 400)
+    ? pass("صورةٌ ٤٠٠ عرضاً لا تُكبَّر إلى ١٦٠٠")
+    : fail(`كُبِّرت: ${smallOut.map((i) => i.width).join(",")}`);
+
+  // دورانُ EXIF: صورُ الهواتف تُخزَّن أفقيةً بعلَمِ دوران، ومن يُسقط
+  // العلَم يعرض المنتجَ مقلوباً.
+  const rotated = await sharp({
+    create: { width: 1000, height: 500, channels: 3, background: { r: 10, g: 200, b: 10 } },
+  }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
+  const rotOut = await processProductImage(rotated);
+  rotOut[0].height > rotOut[0].width
+    ? pass("علَمُ EXIF مُطبَّق — الصورةُ لا تُعرض مقلوبة")
+    : fail("دورانُ EXIF أُسقط");
+
+  // ملفٌّ ليس صورة يُرفض ولا يُخزَّن.
+  try {
+    await processProductImage(Buffer.from("هذا ليس صورة"));
+    fail("ملفٌّ ليس صورةً قُبل");
+  } catch {
+    pass("ملفٌّ ليس صورةً يُرفض");
+  }
 
   if (failures) throw new Error(`[zadim] سقط ${failures} فحصاً من فحوص الكتالوج.`);
   logger.info("✅ كلُّ فحوص المرحلة ٢ اجتازت.");

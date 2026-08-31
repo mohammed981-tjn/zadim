@@ -1,3 +1,4 @@
+import multer from "multer";
 import { defineMiddlewares } from "@medusajs/framework/http";
 import type {
   AuthenticatedMedusaRequest,
@@ -178,11 +179,28 @@ async function recordMutation(
   return next();
 }
 
+// رفعُ الصور في الذاكرة لا على القرص: المعالجةُ فورية والنتيجةُ وحدها
+// تُخزَّن، فلا ملفَّ خامٌ يبقى ولا مجلدٌ مؤقّتٌ يُنظَّف.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  // حدُّ حجمٍ صريح: بلا حدٍّ يستطيع طلبٌ واحد أن يستهلك ذاكرةَ الخادم
+  // كلَّها. و٢٠ ميجا تسع أعلى ما تُخرجه كاميرا هاتفٍ اليوم.
+  limits: { fileSize: 20 * 1024 * 1024, files: 10 },
+});
+
 export default defineMiddlewares({
   routes: [
     {
       matcher: "/admin/*",
       middlewares: [requirePermission, recordMutation],
+    },
+    {
+      matcher: "/admin/catalog/images",
+      methods: ["POST"],
+      // `bodyParser: false` لازم: محلِّلُ JSON يبتلع تيّارَ multipart
+      // فيصل multer إلى جسمٍ مستهلَك ولا يجد ملفاً.
+      bodyParser: false,
+      middlewares: [upload.array("files")],
     },
   ],
 });

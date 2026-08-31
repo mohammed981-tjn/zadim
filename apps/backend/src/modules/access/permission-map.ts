@@ -76,6 +76,7 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // فهو من يقرأ تقرير «بحثٌ بلا نتيجة».
   { pattern: /^\/catalog\/attributes(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/attributes(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "products.write" },
+  { pattern: /^\/catalog\/images(\/|$)/, methods: ["POST"], permission: "products.write" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
 
