@@ -30,11 +30,27 @@ export const LocationProfile = model.define("zadim_location_profile", {
 
   is_fulfilment_enabled: model.boolean().default(true),
 
+  /**
+   * 🔴 **موقعُ الحجر — حيث ينزل الراجعُ ولا يُباع** (بوّابة المرحلة ١٠).
+   *
+   * ولماذا علمٌ ثانٍ ولا يكفي `is_fulfilment_enabled = false`: المعنيان
+   * مختلفان، وخلطُهما يُفقد أحدَهما.
+   *
+   * «موقوفٌ عن الشحن» **حالٌ مؤقّتة** — جردٌ أو عطلُ رفوف — ويُطفئها
+   * المديرُ صباحاً بلا تفكير. ولو كان الحجرُ محمولاً على نفس العلم
+   * لصار **إطفاؤه بيعاً لبضاعةٍ لم تُفحص**: نقرةٌ واحدةٌ تبدو روتيناً
+   * وتُخرج التالفَ إلى عميلٍ ثانٍ.
+   *
+   * فالحجرُ صفةُ المكان لا حالُه، ولا تُطفأ بنقرةِ صباح.
+   */
+  is_returns_location: model.boolean().default(false),
+
   // يظهر للعميل: «يشحن من الرياض».
   display_name_ar: model.text().nullable(),
 }).indexes([
   { on: ["city"] },
   { on: ["priority"] },
+  { on: ["is_returns_location"] },
 ]);
 
 export default LocationProfile;

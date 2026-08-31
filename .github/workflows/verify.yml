@@ -131,6 +131,11 @@ jobs:
       - name: بوّابة المرحلة ٩ — ترتيبُ الرئيسية
         run: npx medusa exec ./src/scripts/verify-storefront.ts
 
+      # وبوّابةُ المرحلة ١٠: الراجعُ في الحجر، والرفُّ لا يُفتح إلا
+      # بحكمٍ بشريّ. وتُقاس بأثرٍ لا بردّ: المتاحُ للبيع قبل وبعد.
+      - name: بوّابة المرحلة ١٠ — المرتجعات
+        run: npx medusa exec ./src/scripts/verify-returns.ts
+
       - name: بوّابة المرحلة ١ — الصلاحيات
         run: npx medusa exec ./src/scripts/verify-access.ts
 

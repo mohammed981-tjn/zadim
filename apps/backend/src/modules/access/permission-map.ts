@@ -62,6 +62,19 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/returns\/[^/]+\/(confirm|request)$/, methods: ["POST"], permission: "returns.approve" },
   { pattern: /^\/returns\/[^/]+\/receive(\/|$)/, methods: ["POST"], permission: "returns.inspect" },
 
+  // ── وحدة returns (المرحلة ١٠) ───────────────────────────────────
+  //
+  // تحت `returns-flow` لا `returns`: الثاني يملكه Medusa، و`policy` قد
+  // يُلتقط معرّفاً — نفسُ سببِ `order-flow` في المرحلة ٥.
+  //
+  // والسياسةُ يقرؤها من يقرأ الطلبات (الدعمُ يخبر العميلَ بالمدّة)،
+  // **ويضبطها من يملك المرتجعاتِ وحدَه**: تضييقُ النافذة قرارُ تاجرٍ
+  // بأثرٍ ماليّ، لا إعدادُ عرض.
+  { pattern: /^\/returns-flow\/policy(\/|$)/, methods: ["GET"], permission: "orders.read" },
+  { pattern: /^\/returns-flow\/policy(\/|$)/, methods: ["POST"], permission: "returns.approve" },
+  { pattern: /^\/returns-flow\/inspections(\/|$)/, methods: ["GET"], permission: "orders.read" },
+  { pattern: /^\/returns-flow\/inspections(\/|$)/, methods: ["POST"], permission: "returns.inspect" },
+
   // ── الشحن ───────────────────────────────────────────────────────
   { pattern: /^\/shipping-options(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "shipping.rates.manage" },
   { pattern: /^\/fulfillment-sets(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "shipping.rates.manage" },

@@ -37,6 +37,8 @@ export type LocationProfileInput = {
   city?: string | null;
   priority?: number | null;
   is_fulfilment_enabled?: boolean | null;
+  /** موقعُ حجر المرتجعات — **لا يُشحن منه أبداً** (م١٠). */
+  is_returns_location?: boolean | null;
 };
 
 export type AllocationPlan = {
@@ -60,6 +62,18 @@ const cityKey = (v?: string | null) => (v ?? "").trim().toLowerCase();
 /**
  * ترتيبُ المستودعات المؤهَّلة. والمستودعُ **بلا ملفٍّ مؤهَّلٌ بأولوية
  * صفر**: الملفُّ يُرتّب ولا يأذن (انظر `models/location-profile.ts`).
+ *
+ * ── 🔴 واستثناءان لا واحد، ولا يُدمجان ─────────────────────────────
+ *
+ * `is_fulfilment_enabled = false` **إذنٌ مسحوبٌ مؤقّتاً**، يُعاد بنقرة.
+ * و`is_returns_location = true` **صفةُ مكان**: هنا يقف الراجعُ حتى
+ * يُفحص. فلو حُمل الثاني على الأول لكان إعادةُ الإذن صباحاً — وهي نقرةٌ
+ * روتينية — **بيعاً لبضاعةٍ لم يرَها أحد**.
+ *
+ * والقاعدةُ تمنع اجتماعَهما (`zadim_location_profile_returns_check`)،
+ * **ولا يُتّكَل على ذلك هنا**: هذه دالّةٌ خالصةٌ تأخذ الملفّاتِ **معطىً**
+ * من مُنادِيها — سكربتٍ أو اختبارٍ أو مسارٍ يُكتب غداً — ولا ترى القيد.
+ * فترشيحُ موقع الحجر يُكتب صراحةً، ولا يُورَّث من ضمانةٍ في مكانٍ آخر.
  */
 export function rankLocations(
   locationIds: string[],
@@ -70,7 +84,10 @@ export function rankLocations(
   const target = cityKey(destinationCity);
 
   return locationIds
-    .filter((id) => byId.get(id)?.is_fulfilment_enabled !== false)
+    .filter((id) => {
+      const p = byId.get(id);
+      return p?.is_fulfilment_enabled !== false && p?.is_returns_location !== true;
+    })
     .sort((a, b) => {
       const pa = byId.get(a);
       const pb = byId.get(b);

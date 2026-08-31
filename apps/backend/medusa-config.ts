@@ -129,6 +129,11 @@ export default defineConfig({
     // لا بعدها، وإلا صار «التراجع» كتابةَ ما هو مكتوب.
     { resolve: "./src/modules/bulk" },
 
+    // 🔴 المرحلة ١٠: **الراجعُ يدخل الحجرَ لا الرفّ.** والحرّاسُ في
+    // القاعدة على `return` و`return_item` و`inventory_level` — جداولٌ لا
+    // نملكها، والطرقُ إليها كثيرة.
+    { resolve: "./src/modules/returns" },
+
     // المرحلة ٧: اللقطُ والتغليفُ والتتبّع — ما لا تعرفه وحدةُ تنفيذ
     // Medusa: من يلقط، وبأيّ ترتيبٍ يمشي، وماذا مسح.
     { resolve: "./src/modules/fulfilment" },

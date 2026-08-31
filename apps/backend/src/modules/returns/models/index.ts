@@ -1,0 +1,5 @@
+// حاجزُ تصدير. لا يُقرأ من مُحمِّل النماذج — فهو يتخطّى أي ملفٍ يبدأ
+// بـ`index.` عمداً — بل يخدم استيرادَ الخدمة وحدَها.
+export { ReturnPolicy } from "./return-policy";
+export { ReturnInspection } from "./return-inspection";
+export { ReturnTransition } from "./return-transition";
