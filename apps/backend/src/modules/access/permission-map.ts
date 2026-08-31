@@ -136,6 +136,12 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/bulk\/product-price$/, methods: ["POST"], permission: "products.bulk_update", countField: "variant_ids.length" },
   { pattern: /^\/bulk(\/|$)/, methods: ["GET"], permission: "products.read" },
 
+  // ── وحدة cms ────────────────────────────────────────────────────
+  // ترتيبُ الرئيسية قرارُ تسويقٍ لا قرارُ كتالوج: من يدير المحتوى
+  // يرتّبها — وهو من يعرف ما يُقدَّم في الموسم.
+  { pattern: /^\/cms\/blocks(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/cms\/blocks(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },

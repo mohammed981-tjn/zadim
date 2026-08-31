@@ -347,6 +347,24 @@ export default async function seedCommerce({ container }: ExecArgs) {
     }
   }
 
+  // ── ٨) كتلُ الرئيسية ──────────────────────────────────────────
+  // بلا كتلٍ تكون الرئيسيةُ فارغةً — حالةٌ صحيحةٌ لكنها لا تُري أحداً
+  // شيئاً. وهذه بذرةُ ترتيبٍ ابتدائيّ **يعيد المديرُ ترتيبَه من اللوحة**.
+  const cms = container.resolve<any>("cms");
+  const HOME_BLOCKS = [
+    { type: "hero", name_ar: "الواجهة", position: 10,
+      payload: { title: "زادم", subtitle: "متجرٌ سعوديّ", cta_label: "تسوّق الآن", cta_href: "/c/all" } },
+    { type: "product_grid", name_ar: "الأكثر مبيعاً", position: 20,
+      payload: { title: "الأكثر مبيعاً", handles: PRODUCTS.map((p) => p.handle) } },
+    { type: "rich_text", name_ar: "لماذا زادم", position: 30,
+      payload: { title: "لماذا زادم", body: "شحنٌ من أقرب مستودع، ودفعٌ عند الاستلام، وفاتورةٌ إلكترونية." } },
+  ];
+  for (const b of HOME_BLOCKS) {
+    const [exists] = await cms.listPageBlocks({ page: "home", type: b.type });
+    if (exists) continue;
+    await cms.createPageBlocks([{ page: "home", is_active: true, ...b }]);
+  }
+
   logger.info(
     `✅ بذرُ التجارة تمّ — قناةٌ ومنطقةٌ (${region.currency_code}) و${locationIds.length} مستودعاً ` +
       `و${SHIPPING.length} خيارَ شحنٍ و${ours.length} مادةَ مخزون.`
