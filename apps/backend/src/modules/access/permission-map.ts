@@ -121,6 +121,12 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/zatca\/settings(\/|$)/, methods: ["GET"], permission: "payments.read" },
   { pattern: /^\/zatca\/settings(\/|$)/, methods: ["POST", "PATCH"], permission: "settings.manage" },
 
+  // ── وحدة fulfilment (شاشاتُ المستودع) ───────────────────────────
+  // اللقطُ والتغليفُ صلاحيتان منفصلتان لأنهما شخصان مختلفان في المستودع:
+  // من يلقط لا يغلّف، ومن يغلّف لا يفتح قوائمَ لقطٍ ليست له.
+  { pattern: /^\/fulfilment\/pick-lists(\/|$)/, methods: ["GET", "POST"], permission: "fulfilment.pick" },
+  { pattern: /^\/fulfilment\/parcels(\/|$)/, methods: ["GET", "POST"], permission: "fulfilment.pack" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },
