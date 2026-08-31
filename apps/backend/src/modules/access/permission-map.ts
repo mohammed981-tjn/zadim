@@ -127,6 +127,15 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/fulfilment\/pick-lists(\/|$)/, methods: ["GET", "POST"], permission: "fulfilment.pick" },
   { pattern: /^\/fulfilment\/parcels(\/|$)/, methods: ["GET", "POST"], permission: "fulfilment.pack" },
 
+  // ── اللوحة والدفعات ─────────────────────────────────────────────
+  // أرقامُ اللوحة تكشف المبيعاتِ والمخزون: تُقرأ بصلاحية التقارير.
+  { pattern: /^\/dashboard\/metrics(\/|$)/, methods: ["GET"], permission: "reports.sales" },
+  // والدفعةُ تحت **نفس سقف** `products.bulk_update` من المرحلة ١ — لا
+  // رقمَ ثانٍ في مسارٍ ثانٍ يفترق عنه يومَ يرفع المالكُ السقف.
+  { pattern: /^\/bulk\/[^/]+\/revert$/, methods: ["POST"], permission: "products.bulk_update" },
+  { pattern: /^\/bulk\/product-price$/, methods: ["POST"], permission: "products.bulk_update", countField: "variant_ids.length" },
+  { pattern: /^\/bulk(\/|$)/, methods: ["GET"], permission: "products.read" },
+
   // ── وحدة access نفسها ───────────────────────────────────────────
   { pattern: /^\/access\/roles(\/|$)/, methods: ["GET"], permission: "roles.manage" },
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },
