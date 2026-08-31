@@ -38,8 +38,14 @@ jobs:
         ports: ['5432:5432']
         # بلا هذا الفحص تبدأ الخطوةُ التالية قبل أن تقبل القاعدةُ
         # اتصالاً، فتسقط الهجرةُ بعطلٍ يبدو عطلَ كودٍ وهو عطلُ توقيت.
+        #
+        # ⚠️ و`-d` ليست زينة: `pg_isready` بلا اسم قاعدةٍ يسأل عن قاعدةٍ
+        # باسم المستخدم — و`zadim` غيرُ موجودة. فيظلّ الفحصُ أحمرَ خمسَ
+        # عشرة مرّةً («database "zadim" does not exist») ثم تمضي الورشةُ
+        # على أيّ حال. فحصُ صحّةٍ يفشل دائماً ولا يمنع شيئاً أسوأُ من
+        # غيابه: يُعلّم القارئ تجاهلَ الأحمر.
         options: >-
-          --health-cmd "pg_isready -U zadim"
+          --health-cmd "pg_isready -U zadim -d zadim_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -68,6 +74,13 @@ jobs:
 
       - name: تثبيت الحزم
         run: npm ci
+
+      # 🔴 خطوةٌ لا يُستغنى عنها: **Medusa لا يُنشئ المخطَّط**، يفترض
+      # وجودَه. وقاعدةٌ جديدةٌ ليس فيها إلا `public`، فتسقط أوّلُ هجرةٍ
+      # بـ«no schema has been selected to create in» — رسالةٌ تبدو عطلَ
+      # إعدادٍ في الكود وهي غيابُ سطرٍ واحد. (سقطت أوّلُ تشغيلةٍ عليها.)
+      - name: إنشاء المخطَّط
+        run: psql "$DATABASE_URL" -c 'create schema if not exists zadim'
 
       - name: الهجرات
         run: npx medusa db:migrate
