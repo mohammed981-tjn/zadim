@@ -196,13 +196,34 @@ try {
   // هذا هو الوجهُ الآخرُ لبوّابة «الترتيب يتغيّر من اللوحة»: الخلفيّةُ
   // تُعيد ترتيباً، **والواجهةُ يجب أن تعرضه كما جاء**. وواجهةٌ ترتّب
   // بنفسها تجعل البوّابةَ خضراءَ في الخلفية وكاذبةً على الشاشة.
+  // ⚠️ **ومفتاحُ النشر ليس تفصيلاً.** كان هذا النداءُ بلا ترويسة
+  // `x-publishable-api-key`، فيردّ Medusa بـ٤٠٠ «Publishable API key
+  // required» — و`res.ok` كاذبةٌ فيمرّ الشرطُ كلُّه **بلا سطرٍ واحدٍ
+  // في التقرير**. فكانت أهمُّ مقارنةٍ في هذه البوّابة تُتخطّى صامتةً،
+  // والتقريرُ يُختم بـ«اجتازت». وفحصٌ لا يعمل ولا يقول إنه لم يعمل
+  // أخطرُ من غياب الفحص.
+  //
+  // فصار: المفتاحُ يُرسَل · وردٌّ غيرُ سليمٍ **سقوطٌ** لا صمت · وتعذّرُ
+  // الوصول **سقوطٌ** أيضاً، لأن هذه البوّابةَ لا معنى لها بلا خلفيّة.
   const api = process.env.MEDUSA_URL ?? "http://localhost:9000";
+  const pk = process.env.MEDUSA_PK ?? process.env.NEXT_PUBLIC_MEDUSA_PK ?? "";
+  console.log("\n== الرئيسيةُ تتبع القاعدة ==");
   try {
-    const res = await fetch(`${api}/store/home`);
-    if (res.ok) {
+    const res = await fetch(`${api}/store/home`, {
+      headers: pk ? { "x-publishable-api-key": pk } : {},
+    });
+    if (!res.ok) {
+      fail(
+        `‏/store/home أعاد ${res.status}` +
+          (res.status === 400 && !pk
+            ? " — مفتاحُ النشر مفقود: صدّر `MEDUSA_PK`"
+            : "")
+      );
+    } else {
       const { blocks } = await res.json();
-      console.log(`\n== الرئيسيةُ تتبع القاعدة (${blocks.length} كتلة) ==`);
-      if (blocks.length >= 2) {
+      if (blocks.length < 2) {
+        fail(`القاعدةُ فيها ${blocks.length} كتلة — والمقارنةُ تحتاج اثنتين فأكثر`);
+      } else {
         const page = await ctx.newPage();
         await page.goto(BASE + "/", { waitUntil: "networkidle" });
         const rendered = await page.$$eval("[data-block-type]", (els) =>
@@ -218,41 +239,55 @@ try {
           const expected = blocks.map((b) => b.type).join(" ⇐ ");
           const actual = rendered.join(" ⇐ ");
           expected === actual
-            ? pass(`الترتيبُ المرسوم يطابق القاعدة: ${actual}`)
+            ? pass(`الترتيبُ المرسوم يطابق القاعدة (${blocks.length} كتلة): ${actual}`)
             : fail(`القاعدة: ${expected} · المرسوم: ${actual}`);
         }
-      } else {
-        console.log("  ⏭️  كتلتان فأقلّ — لا معنى لفحص الترتيب");
       }
     }
-  } catch {
-    console.log("\n  ⏭️  تعذّر الوصولُ إلى /store/home — يُفحص الترتيبُ حين يعمل الخادم");
+  } catch (e) {
+    fail(`تعذّر الوصولُ إلى ${api}/store/home (${String(e.message).slice(0, 60)})`);
   }
 
   // ── Lighthouse إن طُلب وكان مثبَّتاً ───────────────────────────
   if (WANT_LH) {
     console.log("\n== Lighthouse ==");
+    // ⚠️ **Lighthouse لا يقود متصفّحَ Playwright.** يحتاج Chrome بمنفذِ
+    // تنقيحٍ مفتوح يتّصل به. وكان يُنادى بـ`port: undefined` فيحاول
+    // الاتّصال بمنفذٍ لا أحدَ عليه ويسقط بـ«Failed to fetch browser
+    // webSocket URL» — وتُقرأ الرسالةُ «غيرُ مثبَّت» وهو مثبَّت. فيُقلَع
+    // له متصفّحٌ خاصٌّ به على نفس ثنائيّة Chromium، ويُقتل بعده.
+    let chrome = null;
     try {
       const { default: lighthouse } = await import("lighthouse");
+      const chromeLauncher = await import("chrome-launcher");
+
+      chrome = await chromeLauncher.launch({
+        chromePath:
+          process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+        chromeFlags: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage"],
+      });
+
       const result = await lighthouse(BASE, {
-        port: undefined,
+        port: chrome.port,
         output: "json",
         formFactor: "mobile",
         screenEmulation: { mobile: true, width: 390, height: 844, deviceScaleFactor: 3 },
         onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
       });
-      for (const [key, cat] of Object.entries(result.lhr.categories)) {
+      for (const [, cat] of Object.entries(result.lhr.categories)) {
         const score = Math.round(cat.score * 100);
         score >= 90
           ? pass(`${cat.title}: ${score}`)
           : fail(`${cat.title}: ${score} — الحدُّ ٩٠`);
       }
     } catch (e) {
-      // ولا يُدَّعى نجاحٌ لم يقع: غيابُ الأداة يُقال، ولا يُعدّ مروراً.
+      // ولا يُدَّعى نجاحٌ لم يقع: سقوطُ القياس يُقال بسببه، ولا يُعدّ مروراً.
       fail(
-        `Lighthouse غيرُ مثبَّت (${String(e.message).slice(0, 60)}) — ` +
-          `ثبّته بـ\`npm i -D lighthouse\`. والقياساتُ أعلاه **ليست درجةَ Lighthouse**.`
+        `تعذّر قياسُ Lighthouse (${String(e.message).slice(0, 90)}) — ` +
+          `والقياساتُ أعلاه **ليست درجةَ Lighthouse**.`
       );
+    } finally {
+      await chrome?.kill();
     }
   } else {
     console.log(

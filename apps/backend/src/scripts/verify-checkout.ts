@@ -263,6 +263,27 @@ export default async function verifyCheckout({ container }: ExecArgs) {
       ? pass("وإعادةُ المفتاح لاحقاً تُعيد **نفسَ الطلب** لا طلباً ثانياً")
       : fail(`الإعادة: ${JSON.stringify(replay.body)}`);
 
+    // 🔴 ونفسُ المفتاح على **سلّةٍ أخرى** ليس إعادةً بل خطأُ مُنادٍ.
+    //
+    // بلا هذا الفحص يُخدَم صاحبُ السلّة الجديدة بجواب سلّةٍ قديمة:
+    // ٢٠٠ ومعرّفُ طلبٍ اشتُري قبل قليل — فيرى تأكيداً لطلبٍ لم يُنشأ،
+    // وسلّتُه كما هي. وهو أخطرُ من الرفض لأنه يبدو نجاحاً.
+    const cartB2 = await newCart(1);
+    createdCarts.push(cartB2);
+    await runQuote(container, cartB2);
+
+    const crossed = await runCheckout(container, cartB2, key);
+    const beforeCross = await countOrders();
+
+    (crossed.body as any)?.error?.code === "IDEMPOTENCY_KEY_REUSED"
+      ? pass("ومفتاحٌ مستعملٌ على سلّةٍ أخرى يُرفض صراحةً — لا يُخدَم بجوابٍ ليس له")
+      : fail(`المتوقّع IDEMPOTENCY_KEY_REUSED: ${JSON.stringify(crossed.body)}`);
+
+    (crossed.body as any)?.order?.id === undefined &&
+    (await countOrders()) === beforeCross
+      ? pass("ولا طلبَ أُنشئ ولا طلبٌ قديمٌ أُعيد في ذاك الرفض")
+      : fail("الرفضُ سرّب طلباً");
+
     // ── ٤) نفادُ المخزون ────────────────────────────────────────
     logger.info("== نفادُ المخزون ⇒ يُرفض قبل أخذ المال ==");
 

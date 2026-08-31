@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!--
+    أيقونةُ زادم. وكانت مكانَها أيقونةُ Next.js التي جاءت مع سقالة v0 —
+    شعارُ إطارِ عملٍ في شريط متصفّح متجرٍ سعوديّ.
+    والأخضرُ هو `--primary` نفسُه في `globals.css`.
+  -->
+  <rect width="64" height="64" rx="14" fill="#2b6b4f"/>
+  <text x="32" y="45" text-anchor="middle"
+        font-family="'IBM Plex Sans Arabic','Segoe UI',Tahoma,sans-serif"
+        font-size="40" font-weight="700" fill="#ffffff">ز</text>
+</svg>

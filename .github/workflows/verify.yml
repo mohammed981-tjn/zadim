@@ -143,3 +143,99 @@ jobs:
       # البناءُ آخراً: فحصٌ أخيرٌ أن ما مرّ يُترجَم ويُحزَم فعلاً.
       - name: البناء
         run: npx medusa build
+
+  # ── بوّابةُ المتصفّح — وظيفةٌ ثانيةٌ لا خطوةٌ في الأولى ──────────────
+  #
+  # الوظيفةُ أعلاه بلا متصفّحٍ وتنتهي في دقائق، وتُشغَّل على كل دفعة.
+  # وإقحامُ Chromium وNext وLighthouse فيها يُبطّئ **كلَّ** دفعةٍ خلفيّة
+  # لأجل فحصٍ لا يمسّها. فالفصلُ يُبقي البوّاباتِ العشرَ سريعةً كما هي،
+  # ويُبقي هذه كاملةً: خلفيّةٌ حقيقيةٌ وواجهةٌ مبنيّةٌ ومتصفّحٌ يرسم.
+  verify-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zadim
+          POSTGRES_PASSWORD: zadim
+          POSTGRES_DB: zadim_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U zadim -d zadim_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://zadim:zadim@localhost:5432/zadim_test
+      DATABASE_SCHEMA: zadim
+      JWT_SECRET: ci-only-not-a-secret
+      COOKIE_SECRET: ci-only-not-a-secret
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # ── الخلفيّة: تُبنى وتُقلع، وبذورُها هي بذورُ البوّابات ──────────
+      - name: حزمُ الخلفيّة
+        working-directory: apps/backend
+        run: npm ci
+
+      - name: إنشاء المخطَّط
+        run: psql "$DATABASE_URL" -c 'create schema if not exists zadim'
+
+      - name: هجراتُ الخلفيّة وبذورُها
+        working-directory: apps/backend
+        run: |
+          npx medusa db:migrate
+          npx medusa exec ./src/scripts/seed-access.ts
+          npx medusa exec ./src/scripts/seed-catalog.ts
+          npx medusa exec ./src/scripts/seed-commerce.ts
+
+      # 🔴 مفتاحُ النشر يُقرأ من القاعدة لا يُكتب هنا: مفتاحُ CI يُولَّد
+      # في البذور في كل تشغيلة، فمفتاحٌ ثابتٌ في الملفّ يكون خطأً بعد
+      # أوّل تشغيلة — والواجهةُ ترى «المتجرُ لم يُضبط» ويُظنّ عطلَ واجهة.
+      - name: قراءةُ مفتاح النشر
+        run: |
+          PK=$(psql "$DATABASE_URL" -tA -c \
+            "select token from zadim.api_key where type='publishable' and revoked_at is null limit 1")
+          test -n "$PK" || { echo "::error::لا مفتاحَ نشرٍ في القاعدة"; exit 1; }
+          echo "MEDUSA_PK=$PK" >> "$GITHUB_ENV"
+
+      - name: إقلاعُ الخلفيّة
+        working-directory: apps/backend
+        run: |
+          npx medusa build
+          (cd .medusa/server && npm ci --omit=dev && npx medusa start &)
+          npx wait-on -t 180000 http://localhost:9000/health
+
+      # ── الواجهة: تُبنى وتُقلع ────────────────────────────────────
+      - name: بناءُ الواجهة وإقلاعُها
+        working-directory: apps/storefront
+        env:
+          NEXT_PUBLIC_MEDUSA_URL: http://localhost:9000
+        run: |
+          npm ci
+          NEXT_PUBLIC_MEDUSA_PK="$MEDUSA_PK" npm run build
+          (NEXT_PUBLIC_MEDUSA_PK="$MEDUSA_PK" npm start &)
+          npx wait-on -t 120000 http://localhost:3000
+
+      # ── المتصفّح: Chromium حقيقيٌّ يرسم الصفحة ──────────────────
+      - name: أدواتُ القياس
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # 🔴 البوّابة: الاتجاهُ والسرعةُ ومطابقةُ ترتيب الكتل.
+      # و`CHROMIUM_PATH` فارغٌ هنا عمداً: `playwright install` يضع
+      # المتصفّحَ في مكانه المعتاد، ويعرفه هو.
+      - name: بوّابة المرحلة ٩ — الواجهة في متصفّح
+        env:
+          MEDUSA_URL: http://localhost:9000
+        run: node scripts/verify-ui.mjs http://localhost:3000 --lighthouse

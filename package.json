@@ -1,0 +1,12 @@
+{
+  "name": "zadim",
+  "private": true,
+  "description": "أدواتُ الجذر — ما تحتاجه بوّابةُ المتصفّح وحدَها. والخلفيّةُ والواجهةُ لكلٍّ حزمُها في apps/.",
+  "scripts": {
+    "verify:ui": "node scripts/verify-ui.mjs"
+  },
+  "devDependencies": {
+    "lighthouse": "^12.8.2",
+    "playwright": "^1.56.1"
+  }
+}

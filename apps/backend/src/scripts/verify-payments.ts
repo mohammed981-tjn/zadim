@@ -42,6 +42,8 @@ export default async function verifyPayments({ container }: ExecArgs) {
   const tag = `vpay-${Date.now()}`;
   const madeSettings: string[] = [];
   const madePolicies: string[] = [];
+  // سياساتٌ كانت حيّةً قبلنا وحُذفت حذفاً ليّناً — تُعاد في `finally`.
+  const restoreEnabled: string[] = [];
   const madeMoney: Array<[string, string]> = [];
   const madeOrders: string[] = [];
   const madeFulfilments: string[] = [];
@@ -112,6 +114,23 @@ export default async function verifyPayments({ container }: ExecArgs) {
 
     // ── ٢) السياسةُ والرفضاتُ من القاعدة ────────────────────────
     logger.info("== السياسةُ والرفضاتُ من القاعدة ==");
+
+    // ⚠️ **والمقعدُ واحدٌ وقد يكون مشغولاً قبلنا.** الفهرسُ
+    // `IDX_zadim_cod_policy_single` هو `UNIQUE ((true)) WHERE deleted_at
+    // IS NULL` — أي **صفٌّ واحدٌ حيٌّ لا غير**، نافذاً كان أو مُطفأً.
+    // فصفٌّ باقٍ من تشغيلةٍ انقطعت قبل تنظيفها يُسقِط الفحصَ بـ«already
+    // exists»: لا لأن الحارس انكسر بل لأن المقعد مشغول. وCI يبدأ بقاعدةٍ
+    // جديدةٍ فلا يراه أبداً — فيسقط على جهاز المطوّر وحدَه ويُقرأ عطلَ
+    // كودٍ ثم يُتجاهَل.
+    //
+    // فيُخلى المقعدُ بحذفٍ ليّنٍ **ويُعاد شاغلُه في `finally`** — لا
+    // يُحذف حذفاً باتّاً: قد يكون سياسةَ متجرٍ حقيقيّ.
+    const foreign = await pg("zadim.zadim_cod_policy").whereNull("deleted_at").select("id");
+    const foreignIds = (foreign as any[]).map((r) => r.id);
+    if (foreignIds.length) {
+      await pg("zadim.zadim_cod_policy").whereIn("id", foreignIds).update({ deleted_at: new Date() });
+      restoreEnabled.push(...foreignIds);
+    }
 
     const [policyRow] = await payments.createCodPolicies([
       {
@@ -467,6 +486,11 @@ export default async function verifyPayments({ container }: ExecArgs) {
     await pg("zadim.order_fulfillment").whereIn("fulfillment_id", madeFulfilments).del();
     await pg("zadim.fulfillment").whereIn("id", madeFulfilments).del();
     await pg("zadim.zadim_cod_policy").whereIn("id", madePolicies).del();
+    // ثم يُعاد شاغلُ المقعد — **بعد** حذف صفوفنا، وإلا اصطدم بالفهرس
+    // وهو يعود فبقيت القاعدةُ بلا سياسةٍ أصلاً.
+    if (restoreEnabled.length) {
+      await pg("zadim.zadim_cod_policy").whereIn("id", restoreEnabled).update({ deleted_at: null });
+    }
     await pg("zadim.zadim_zatca_setting").whereIn("id", madeSettings).del();
     // الرفضاتُ والفواتيرُ والعملياتُ تبقى: قواعدُ «لا حذف» تُسقط حذفَها
     // بصمت، وهو المطلوب منها. **وسلسلةُ الفواتير تنمو ولا تُقصّ** —
