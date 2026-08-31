@@ -30,6 +30,7 @@
  */
 
 import { chromium } from "playwright";
+import { existsSync } from "node:fs";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const WANT_LH = process.argv.includes("--lighthouse");
@@ -60,10 +61,22 @@ const fail = (m) => {
   failures++;
 };
 
-const browser = await chromium.launch({
-  executablePath:
-    process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-});
+/**
+ * أين المتصفّح — و**لا مسارَ مبرمَجٌ افتراضياً**.
+ *
+ * كان الافتراضُ مسارَ حاويةِ التطوير (`/opt/pw-browsers/...`) — يعمل هنا،
+ * **ويُسقِط CI** حيث يضعه `playwright install` في `~/.cache/ms-playwright`
+ * («executable doesn't exist»). ومسارٌ مبرمَجٌ لبيئةٍ واحدةٍ يبطل عملَ
+ * Playwright نفسِه في إيجاد متصفّحه.
+ *
+ * فالترتيب: ما يُصرّح به المُشغّل · ثم مسارُ الحاوية **إن كان موجوداً
+ * فعلاً** · ثم `undefined` فيتولّاها Playwright.
+ */
+const DEV_CHROMIUM = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+const chromiumPath =
+  process.env.CHROMIUM_PATH ?? (existsSync(DEV_CHROMIUM) ? DEV_CHROMIUM : undefined);
+
+const browser = await chromium.launch({ executablePath: chromiumPath });
 
 // شاشةُ جوّالٍ حقيقية: البوّابة تقول «على الجوال»، وقياسُ سطحِ مكتبٍ
 // عريضٍ يُعطي رقماً أجمل لا أصدق.
@@ -261,9 +274,11 @@ try {
       const { default: lighthouse } = await import("lighthouse");
       const chromeLauncher = await import("chrome-launcher");
 
+      // ونفسُ ثنائيّة Playwright تُعطى لـLighthouse: `chromium.executablePath()`
+      // يُعيد ما أقلعناه فعلاً، فلا يُقاس على متصفّحٍ آخرَ في النظام —
+      // ولا يُشترط وجودُ Chrome مثبَّتاً في الجهاز أصلاً.
       chrome = await chromeLauncher.launch({
-        chromePath:
-          process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+        chromePath: chromiumPath ?? chromium.executablePath(),
         chromeFlags: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage"],
       });
 
