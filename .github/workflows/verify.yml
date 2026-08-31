@@ -109,6 +109,12 @@ jobs:
       - name: بوّابة المرحلة ٥ — آلةُ حالات الطلب
         run: npx medusa exec ./src/scripts/verify-orders.ts
 
+      # وبوّابةُ المرحلة ٦: التحصيلُ بعد الشحن، وسلسلةُ الفواتير. وهذه
+      # الأخيرةُ **لا تُصلَح بأثرٍ رجعيّ** — فانكسارُها اليوم يعني فجوةً
+      # تُفسَّر للهيئة غداً.
+      - name: بوّابة المرحلة ٦ — المدفوعات والفوترة
+        run: npx medusa exec ./src/scripts/verify-payments.ts
+
       - name: بوّابة المرحلة ١ — الصلاحيات
         run: npx medusa exec ./src/scripts/verify-access.ts
 

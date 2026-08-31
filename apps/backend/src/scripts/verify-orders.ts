@@ -347,6 +347,33 @@ export default async function verifyOrders({ container }: ExecArgs) {
     if (!paymentId) {
       fail("لا دفعةً للفحص — شغّل verify-checkout أوّلاً");
     } else {
+      // ⚠️ **شحنةٌ أوّلاً**: حارسُ المرحلة ٦ يمنع التحصيلَ قبل الشحن
+      // (ADR-019). وهذا الفحصُ يقيس المستردَّ لا التوقيت، فتُهيَّأ له
+      // الشحنةُ صراحةً بدل أن يُضعَّف الحارسُ من أجله.
+      const payOrder = await pg.raw(
+        `select opc."order_id" as id
+           from "zadim"."payment" p
+           join "zadim"."order_payment_collection" opc
+             on opc."payment_collection_id" = p."payment_collection_id"
+          where p."id" = ? and opc."deleted_at" is null
+          limit 1`,
+        [paymentId]
+      );
+      const payOrderId = (payOrder?.rows ?? payOrder)[0]?.id;
+      if (payOrderId) {
+        const shipId = `ful_${tag}_pay`;
+        await pg.raw(
+          `insert into "zadim"."fulfillment" ("id","location_id","provider_id","shipped_at","packed_at")
+           values (?, 'sloc_gate', 'manual_manual', now(), now())`,
+          [shipId]
+        );
+        madeFulfilments.push(shipId);
+        await pg.raw(
+          `insert into "zadim"."order_fulfillment" ("id","order_id","fulfillment_id") values (?, ?, ?)`,
+          [`ofu_${tag}_pay`, payOrderId, shipId]
+        );
+      }
+
       const capId = `cap_${tag}`;
       await pg.raw(
         `insert into "zadim"."capture" ("id","payment_id","amount","raw_amount")
