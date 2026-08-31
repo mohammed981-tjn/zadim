@@ -120,6 +120,11 @@ jobs:
       - name: بوّابة المرحلة ٧ — الشحن والتنفيذ
         run: npx medusa exec ./src/scripts/verify-fulfilment.ts
 
+      # وبوّابةُ المرحلة ٨: كلُّ رقمٍ في اللوحة يُعاد حسابُه بـSQL خام
+      # ويُقارن، ودفعةٌ على ٥٠٠ تُطبَّق وتُتراجَع.
+      - name: بوّابة المرحلة ٨ — اللوحة والدفعات
+        run: npx medusa exec ./src/scripts/verify-dashboard.ts
+
       - name: بوّابة المرحلة ١ — الصلاحيات
         run: npx medusa exec ./src/scripts/verify-access.ts
 
