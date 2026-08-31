@@ -2,7 +2,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import { CATALOG_MODULE } from "../../../modules/catalog";
 import type CatalogModuleService from "../../../modules/catalog/service";
-import { normalizeArabic } from "../../../modules/catalog/arabic";
+import { matchesAnyTerm, normalizeArabic } from "../../../modules/catalog/arabic";
 
 /**
  * بحثُ المتجر (بند ٢).
@@ -39,14 +39,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     filters: { status: "published" },
   });
 
-  // المطابقةُ على النصّ **المطبَّع** من الطرفين: عنوانُ المنتج يُطبَّع
-  // وقتَ المقارنة لأنه يسكن وحدةَ Medusa ولا نملك إضافةَ عمودٍ إليه.
+  // المطابقةُ على النصّ **المطبَّع** من الطرفين، **بكلماتٍ كاملةٍ أو
+  // بادئاتٍ لا باحتواء**: `matchesAnyTerm` وحدَها تقرّر، ويناديها
+  // سكربتُ الفحص نفسُه — فلا تفترق نسختان (انظر تعليقَها).
   // وهذا مقبولٌ لكتالوجٍ بحجمنا؛ ويوم يكبر ينتقل إلى فهرسٍ خارجيّ
   // خلف نفس هذه الواجهة (ADR-006) — والمُنادي لا يتغيّر.
-  const matches = (products as any[]).filter((p) => {
-    const haystack = normalizeArabic(`${p.title ?? ""} ${p.description ?? ""} ${p.handle ?? ""}`);
-    return terms.some((t) => t && haystack.includes(t));
-  });
+  const matches = (products as any[]).filter((p) =>
+    matchesAnyTerm(`${p.title ?? ""} ${p.description ?? ""} ${p.handle ?? ""}`, terms)
+  );
 
   res.json({
     query: raw,

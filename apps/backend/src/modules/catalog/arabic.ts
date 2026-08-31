@@ -97,3 +97,47 @@ export function expandWithSynonyms(
 
   return [...out];
 }
+
+/**
+ * تقطيعٌ للمطابقة: يفصل على **كل ما ليس حرفاً ولا رقماً** — لا على
+ * المسافة وحدها. فـ`zadim-headphones` كلمتان لا واحدة.
+ */
+const NON_WORD = /[^\p{L}\p{N}]+/u;
+
+export function searchTokens(input: string): string[] {
+  return normalizeArabic(input).split(NON_WORD).filter(Boolean);
+}
+
+/** أقلُّ طولٍ تُقبل عنده مطابقةُ البادئة. */
+const MIN_PREFIX = 3;
+
+/**
+ * هل يطابق النصُّ أيَّ مصطلحٍ من المصطلحات؟
+ *
+ * ── 🔴 ولماذا ليست `includes` ────────────────────────────────────
+ *
+ * كانت كذلك، وكشفها منتجٌ جديدٌ اسمُه `zadim-headphones`: البحثُ عن
+ * «جوال» يوسَّع إلى `phone`، و`"headphones".includes("phone")` **صحيحة**
+ * — فأرجع البحثُ عن جوّالٍ سمّاعةَ رأس. ونفسُ هذا الصنف من العطل أُصلح
+ * في توسيع المرادفات ثم بقي هنا في المطابقة، لأن المنطقَ كان مكرَّراً
+ * في موضعين: هذا، ونسخةٌ منه في سكربت الفحص. **فالتكرارُ هو العطل**،
+ * والعلاجُ دالّةٌ واحدةٌ يناديها الاثنان.
+ *
+ * والمطابقة: كلمةٌ كاملةٌ أو **بادئة** (`جوال` ⇒ `جوالات`)، والبادئةُ
+ * من ثلاثة أحرفٍ فصاعداً — فحرفان يطابقان نصفَ الكتالوج.
+ *
+ * ومصطلحٌ من كلمتين يُطابق حين تُطابق **كلُّ** كلماته: «ايفون ١٥» لا
+ * يجوز أن تُطابق كلَّ أيفون.
+ */
+export function matchesAnyTerm(haystack: string, terms: string[]): boolean {
+  const tokens = searchTokens(haystack);
+  if (!tokens.length) return false;
+
+  return terms.some((term) => {
+    const wanted = searchTokens(term);
+    if (!wanted.length) return false;
+    return wanted.every((w) =>
+      tokens.some((t) => t === w || (w.length >= MIN_PREFIX && t.startsWith(w)))
+    );
+  });
+}

@@ -2,7 +2,7 @@ import { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { CATALOG_MODULE } from "../modules/catalog";
 import type CatalogModuleService from "../modules/catalog/service";
-import { normalizeArabic, expandWithSynonyms } from "../modules/catalog/arabic";
+import { normalizeArabic, expandWithSynonyms, matchesAnyTerm } from "../modules/catalog/arabic";
 import { processProductImage, IMAGE_SIZES } from "../modules/catalog/images";
 
 /**
@@ -45,10 +45,12 @@ export default async function verifyCatalog({ container }: ExecArgs) {
 
   const search = async (q: string) => {
     const terms = await catalog.expandQuery(q);
-    return (products as any[]).filter((p) => {
-      const hay = normalizeArabic(`${p.title ?? ""} ${p.description ?? ""} ${p.handle ?? ""}`);
-      return terms.some((t) => t && hay.includes(t));
-    });
+    // نفسُ دالّة المسار لا نسخةٌ منها: النسختان تفترقان، وقد افترقتا
+    // فعلاً — فمرّ عطلُ «جوال ⇒ سمّاعة» في الفحص لأنه كان يحمل نفسَ
+    // الخطأ الذي يفحصه.
+    return (products as any[]).filter((p) =>
+      matchesAnyTerm(`${p.title ?? ""} ${p.description ?? ""} ${p.handle ?? ""}`, terms)
+    );
   };
 
   for (const q of ["ايفون", "آيفون", "أيفون", "إيفون"]) {
@@ -146,12 +148,28 @@ export default async function verifyCatalog({ container }: ExecArgs) {
 
   // ── ٦) المرادفات بيانات ────────────────────────────────────────
   logger.info("== المرادفات بيانات لا كود ==");
-  const before = await search("سماعة");
-  await catalog.upsertSynonym({ term: "سماعة", synonyms: ["قميص"] });
-  const after = await search("سماعة");
+  // ⚠️ **كلمةٌ لا وجودَ لها في أي كتالوج** لا كلمةٌ نظنُّها غيرَ موجودة.
+  // كانت «سماعة»، ثم أضافت بذرةُ التجارة منتجاً اسمُه «سمّاعة زادم»
+  // فصار «قبل = 1» وسقط الفحص — **اختبارٌ بُني على غياب بيانات ينكسر
+  // يوم تصل البيانات**، وينكسر بلا أن يكون في الكود عطل.
+  const ghost = "زربولية";
+  const before = await search(ghost);
+  await catalog.upsertSynonym({ term: ghost, synonyms: ["قميص"] });
+  const after = await search(ghost);
   before.length === 0 && after.length > 0
     ? pass("مرادفٌ أُضيف وقتَ التشغيل غيّر النتيجة — بلا نشرِ كود")
     : fail(`إضافةُ المرادف لم تُغيّر شيئاً (قبل=${before.length} بعد=${after.length})`);
+
+  // ولا يبقى أثرُ الفحص في بيانات المتجر.
+  const ghostRows = await catalog.listSearchSynonyms({});
+  const mineSyn = (ghostRows as any[]).filter((r) => r.term === ghost);
+  if (mineSyn.length) await catalog.deleteSearchSynonyms(mineSyn.map((r) => r.id));
+
+  // ولا يُرجع البحثُ عن «جوال» سمّاعةَ رأسٍ لأن اسمَها يحوي `phone`.
+  const jawwal = await search("جوال");
+  !jawwal.some((p: any) => p.handle === "zadim-headphones")
+    ? pass("«جوال» لا تُرجع zadim-headphones — المطابقةُ بكلمةٍ لا باحتواء")
+    : fail("«جوال» أرجعت سمّاعةَ الرأس — عادت مطابقةُ الاحتواء");
 
   // تنظيف: المرادفُ التجريبيّ لا يبقى في القاعدة
   const [temp] = await catalog.listSearchSynonyms({ term_normalized: normalizeArabic("سماعة") });
