@@ -17,8 +17,8 @@
 | ٦ | السلة الذكية ومعادلة المجاميع | 📐 ⏳م٤ | `order_totals` بقيد `totals_balance` ✅ **مُختبَر** |
 | ٧ | Checkout بخطواته | 📐 ⏳م٤ | [`04`](04-api-contract.md) §1 — **الترتيب السبعة** |
 | ٨ | شراء الضيف | 📐 ⏳م٤ | `customers.is_guest` |
-| ٩ | محرّك المخزون: on_hand · reserved · available · incoming | 📐 ⏳م٣ | `inventory_levels` ✅ **مُختبَر** |
-| ١٠ | تعدّد المستودعات واختيارُ الأقرب | 📐 ⏳م٣ | `stock_locations` بالإحداثيات والأولوية |
+| ٩ | محرّك المخزون: on_hand · reserved · available · incoming | ✅ **م٣** | مُطلِقان: الحجزُ محروسٌ بـ`FOR UPDATE`، والمحجوزُ **مشتقٌّ** ([ADR-010](00-decisions.md) · [ADR-011](00-decisions.md)) — ١٠٠ متزامنة على ١٠ ⇒ **١٠** |
+| ١٠ | تعدّد المستودعات واختيارُ الأقرب | ✅ **م٣** | `zadim_location_profile` + `planAllocation` — **التقسيمُ آخرُ الحلول** ([ADR-012](00-decisions.md)) |
 | ١١ | آلة حالات الطلب | ⚠️ **مُعدَّل** | [ADR-001](00-decisions.md) — **ثلاثةُ محاورَ لا عمودٌ واحد**، والستّ عشرة حالةً كلُّها معبَّرٌ عنها في [`03`](03-state-machines.md) §0 |
 | ١٢ | تسلسل التنفيذ | 📐 ⏳م٧ | `fulfilments` — **الوحدةُ شحنةٌ لا طلب** |
 | ١٣ | اللقط بقوائم ومسارِ مشي | 📐 ⏳م٧ | `pick_list_items.walk_order` |

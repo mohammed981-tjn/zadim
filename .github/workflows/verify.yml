@@ -1,0 +1,97 @@
+# بوّاباتُ المراحل — تُشغَّل في **كل دفعة**، لا مرّةً واحدة.
+#
+# ── لماذا في CI لا على جهازِ من كتب الكود ─────────────────────────
+#
+# بوّابةُ المرحلة ٣ نصُّها: «١٠٠ طلبٍ متزامن على مخزون ١٠ ⇒ عشرةٌ تنجح
+# بالضبط». وهذا فحصٌ **لا يُختبر مرّةً ويُنسى**: أيُّ تغييرٍ في مُطلِقٍ
+# أو هجرةٍ أو مسارِ حجزٍ يمكن أن يفتح البابَ ثانيةً، والعطلُ لا يظهر
+# إلا يوم يبيع المتجرُ لأربعةٍ وتسعين عميلاً بضاعةً لعشرة.
+#
+# ── ولماذا قاعدةٌ حقيقيةٌ لا محاكاة ───────────────────────────────
+#
+# لأن **الحرّاس في القاعدة لا في الكود**: قيودُ `CHECK`، ومُطلِقاتٌ
+# تقفل صفوفاً بـ`FOR UPDATE`، وقواعدُ `DO INSTEAD NOTHING`. ومحاكاةٌ
+# لا تنفّذ SQL تُمرّر كلَّ ذلك وهو معطَّل — فيمرّ الاختبارُ **لسببٍ غير
+# الذي نظنّه**، وتلك أسوأُ من ألّا نختبر.
+#
+# وكلفتُها صفر: المستودعُ عامّ، ودقائقُ Actions في العامّ مجانيةٌ بلا حدّ.
+name: بوّابات التحقّق
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zadim
+          POSTGRES_PASSWORD: zadim
+          POSTGRES_DB: zadim_test
+        ports: ['5432:5432']
+        # بلا هذا الفحص تبدأ الخطوةُ التالية قبل أن تقبل القاعدةُ
+        # اتصالاً، فتسقط الهجرةُ بعطلٍ يبدو عطلَ كودٍ وهو عطلُ توقيت.
+        options: >-
+          --health-cmd "pg_isready -U zadim"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://zadim:zadim@localhost:5432/zadim_test
+      DATABASE_SCHEMA: zadim
+      # أسرارُ تطويرٍ صريحةٌ لقاعدةٍ تُخلق وتموت مع التشغيلة. والصراحةُ
+      # هنا أنظفُ من سرٍّ في المستودع يوهم أن له قيمة.
+      JWT_SECRET: ci-only-not-a-secret
+      COOKIE_SECRET: ci-only-not-a-secret
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: تثبيت الحزم
+        run: npm ci
+
+      - name: الهجرات
+        run: npx medusa db:migrate
+
+      - name: البذور
+        run: |
+          npx medusa exec ./src/scripts/seed-access.ts
+          npx medusa exec ./src/scripts/seed-catalog.ts
+
+      # 🔴 البوّابة. وتُشغَّل **أوّلاً** لا آخراً: إن انكسر منعُ البيع
+      # الزائد فذاك أخطرُ ما يمكن أن ينكسر، ولا معنى لانتظار بقية
+      # الفحوص لنعرف.
+      - name: بوّابة المرحلة ٣ — التزاحم والمخزون
+        run: npx medusa exec ./src/scripts/verify-inventory.ts
+
+      - name: بوّابة المرحلة ١ — الصلاحيات
+        run: npx medusa exec ./src/scripts/verify-access.ts
+
+      - name: الحارس — خريطةُ المسارات
+        run: npx medusa exec ./src/scripts/verify-guard.ts
+
+      - name: بوّابة المرحلة ٢ — الكتالوج
+        run: npx medusa exec ./src/scripts/verify-catalog.ts
+
+      # البناءُ آخراً: فحصٌ أخيرٌ أن ما مرّ يُترجَم ويُحزَم فعلاً.
+      - name: البناء
+        run: npx medusa build
