@@ -85,4 +85,39 @@ zadim/
 
 ---
 
-> **آخر تحديث: 2026-08-29** · المرحلة ٠ · لا كودَ تطبيقٍ بعد.
+## 🚀 النشر على Vercel
+
+### تحضيراً سريعة
+
+1. **انسخ ملف البيئة**:
+   ```bash
+   cp apps/storefront/.env.example apps/storefront/.env.local
+   ```
+   ثم عدّل:
+   - `NEXT_PUBLIC_MEDUSA_URL` - عنوان الخادم الخلفي
+   - `NEXT_PUBLIC_MEDUSA_PK` - مفتاح النشر من الخادم
+
+2. **اختبر البناء محلياً**:
+   ```bash
+   cd apps/storefront
+   npm install
+   npm run build
+   npm start
+   ```
+
+3. **انشر على Vercel**:
+   - اربط المستودع بـ Vercel من [vercel.com](https://vercel.com)
+   - أضف متغيرات البيئة في لوحة Vercel:
+     - `NEXT_PUBLIC_MEDUSA_URL`
+     - `NEXT_PUBLIC_MEDUSA_PK`
+   - Vercel سيكتشف تلقائياً ملف `vercel.json` ويبني المشروع
+
+### ملاحظات مهمة
+
+- **الخطوط**: تم استبدال Google Fonts بخطوط النظام للتوافقية في بيئات CI/CD
+- **الصور**: تحسين الصور معطّل حالياً (`images.unoptimized: true`) ريثما نحسم استضافتها
+- **المتغيرات العلنية**: كل شيء يبدأ بـ `NEXT_PUBLIC_` يصل إلى المتصفح، لذا لا تضع أسراراً فيه
+
+---
+
+> **آخر تحديث: 2026-09-01** · الآن جاهز للنشر على Vercel ✨

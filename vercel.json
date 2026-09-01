@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.com/vercel.json",
+  "version": 2,
+  "root": "apps/storefront",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev",
+  "env": {
+    "NEXT_PUBLIC_MEDUSA_URL": "@next_public_medusa_url",
+    "NEXT_PUBLIC_MEDUSA_PK": "@next_public_medusa_pk"
+  },
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "main*": true
+    }
+  }
+}

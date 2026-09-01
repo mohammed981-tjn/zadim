@@ -1,0 +1,27 @@
+# تجاهل ملفات المشروع غير المتعلقة بـ Storefront
+
+# المستودع والتاريخ
+.git
+.gitignore
+
+# التطبيقات الأخرى
+apps/backend/
+
+# الحزم والمكتبات المشتركة (لن نستخدمها في البداية)
+packages/
+
+# الـ CI والبناء
+.github/
+scripts/
+
+# التوثيق
+docs/
+README.md
+
+# ملفات النظام
+.DS_Store
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,16 +1,11 @@
 import type { Metadata, Viewport } from "next"
-import { IBM_Plex_Sans_Arabic } from "next/font/google"
 import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import "./globals.css"
 
-const plexArabic = IBM_Plex_Sans_Arabic({
-  subsets: ["arabic", "latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  display: "swap",
-  variable: "--font-arabic",
-  fallback: ["system-ui", "Segoe UI", "Tahoma", "Arial"],
-})
+// ⚠️ تم استبدال Google Fonts بـ system fonts لضمان العمل بدون اتصال إنترنت
+// في بيئات الـ CI/CD والـ Vercel. الخط الأساسي سيكون الخط النظام للعربية.
+// يمكن استخدام local fonts في المستقبل إذا أُضيفت إلى public/fonts/
 
 export const metadata: Metadata = {
   title: "زادم — متجرك السعودي",
@@ -28,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ar" dir="rtl" className={`${plexArabic.variable} bg-background`}>
+    <html lang="ar" dir="rtl" className="bg-background">
       <body className="font-sans antialiased">
         <div className="flex min-h-dvh flex-col">
           <SiteHeader />
