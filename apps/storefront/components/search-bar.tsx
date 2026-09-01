@@ -3,8 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
 import { Search } from "lucide-react"
+import { t, type Locale } from "@/lib/i18n"
 
-export function SearchBar() {
+export function SearchBar({ locale }: { locale: Locale }) {
   const router = useRouter()
   const params = useSearchParams()
   const [value, setValue] = useState(params.get("q") ?? "")
@@ -13,7 +14,7 @@ export function SearchBar() {
     e.preventDefault()
     const q = value.trim()
     if (!q) return
-    router.push(`/search?q=${encodeURIComponent(q)}`)
+    router.push(`/${locale}/search?q=${encodeURIComponent(q)}`)
   }
 
   return (
@@ -28,8 +29,8 @@ export function SearchBar() {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         enterKeyHint="search"
-        placeholder="ابحث عن منتج…"
-        aria-label="البحث في المتجر"
+        placeholder={t(locale, "search.placeholder")}
+        aria-label={t(locale, "search.placeholder")}
         className="h-11 w-full rounded-xl border border-border bg-card ps-11 pe-4 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/40"
       />
     </form>

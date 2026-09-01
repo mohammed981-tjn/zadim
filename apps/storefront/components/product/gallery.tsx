@@ -1,18 +1,20 @@
 "use client"
 
+import { t, type Locale } from "@/lib/i18n"
+
 import Image from "next/image"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import type { ProductImage } from "@/lib/medusa"
 
-export function Gallery({ images, title }: { images: ProductImage[]; title: string }) {
+export function Gallery({ images, title, locale }: { images: ProductImage[]; title: string; locale: Locale }) {
   const [active, setActive] = useState(0)
   const list = images.length ? images : []
 
   if (!list.length) {
     return (
       <div className="flex aspect-square items-center justify-center rounded-2xl bg-muted text-sm text-muted-foreground">
-        لا توجد صورة
+        {t(locale, "product.noImage")}
       </div>
     )
   }
@@ -37,7 +39,7 @@ export function Gallery({ images, title }: { images: ProductImage[]; title: stri
               key={img.id ?? i}
               type="button"
               onClick={() => setActive(i)}
-              aria-label={`عرض الصورة ${i + 1}`}
+              aria-label={t(locale, "product.viewImage", { n: i + 1 })}
               aria-current={i === active}
               className={cn(
                 "relative aspect-square overflow-hidden rounded-lg border bg-muted transition-colors",

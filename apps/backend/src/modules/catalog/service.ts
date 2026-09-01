@@ -5,6 +5,7 @@ import {
   ProductAttributeValue,
   SearchSynonym,
   SeoMeta,
+  Translation,
   UrlRedirect,
 } from "./models";
 import { expandWithSynonyms, normalizeArabic } from "./arabic";
@@ -29,6 +30,7 @@ class CatalogModuleService extends MedusaService({
   ProductAttributeValue,
   SearchSynonym,
   SeoMeta,
+  Translation,
   UrlRedirect,
 }) {
   /**
@@ -176,6 +178,62 @@ class CatalogModuleService extends MedusaService({
     return existing
       ? await this.updateSeoMetas({ id: (existing as any).id, ...payload })
       : await this.createSeoMetas(payload);
+  }
+
+  /**
+   * يكتب ترجمةً واحدة (أو يستبدلها).
+   *
+   * والحقلُ المسموحُ تحرسه القاعدة لا هذه الدالّة (انظر قيدَ
+   * `zadim_translation_field_check`) — فالكتابةُ من سكربتٍ أو من
+   * هجرةٍ تمرّ على نفس الحارس.
+   */
+  async setTranslation(input: {
+    entity_type: "product" | "product_variant" | "product_category" | "product_collection";
+    entity_id: string;
+    field: string;
+    locale: string;
+    value: string;
+  }) {
+    const [existing] = await this.listTranslations({
+      entity_type: input.entity_type,
+      entity_id: input.entity_id,
+      field: input.field,
+      locale: input.locale,
+    });
+    return existing
+      ? await this.updateTranslations({ id: (existing as any).id, value: input.value })
+      : await this.createTranslations(input);
+  }
+
+  /**
+   * ترجماتُ دفعةٍ من المعرّفات في لغةٍ واحدة، مرتّبةً للإلباس:
+   * `{ [entity_id]: { [field]: value } }`.
+   *
+   * ── ولماذا بالمعرّف وحدَه لا بالنوع والمعرّف ──────────────────────
+   *
+   * لأن المُلبِسَ يمشي على ردٍّ لا يعرف شكلَه: منتجٌ فيه متغيّراتٌ فيها
+   * تصنيفات. ولو احتاج النوعَ لاحتاج أن يستنتجه من موضع الكائن في
+   * الشجرة — أو من بادئة معرّفه (`prod_`/`variant_`)، وهي عادةُ تسمية
+   * لا عقد. ومعرّفاتُ Medusa فريدةٌ عبر الجداول كلِّها، فالمعرّفُ
+   * وحدَه كافٍ ولا يلتبس.
+   *
+   * والنوعُ يبقى في الجدول لأنه يخدم **الكتابة**: به تُحصَر الحقول
+   * المسموحة، وبه تُسرد ترجماتُ نوعٍ في اللوحة.
+   */
+  async translationsFor(
+    ids: string[],
+    locale: string
+  ): Promise<Record<string, Record<string, string>>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length) return {};
+
+    const rows = await this.listTranslations({ entity_id: unique, locale });
+
+    const byEntity: Record<string, Record<string, string>> = {};
+    for (const r of rows as any[]) {
+      (byEntity[r.entity_id] ??= {})[r.field] = r.value;
+    }
+    return byEntity;
   }
 
   /**

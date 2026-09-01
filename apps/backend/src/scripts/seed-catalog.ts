@@ -34,6 +34,12 @@ const ATTRIBUTES: Array<{
   { code: "origin", name_ar: "بلد المنشأ", name_en: "Origin", data_type: "text", is_filterable: false },
 ];
 
+/** أسماءُ التصنيفات بالإنجليزية — تُكتب في جدول الترجمة لا في الكيان. */
+const CATEGORY_NAMES_EN: Record<string, string> = {
+  "إلكترونيات": "Electronics",
+  "ملابس": "Clothing",
+};
+
 /** التصنيفُ ⇒ خصائصُه. وهذا وحده ما يولّد الفلاتر. */
 const CATEGORY_ATTRIBUTES: Record<string, string[]> = {
   "إلكترونيات": ["color", "storage", "origin"],
@@ -72,7 +78,20 @@ export default async function seedCatalog({ container }: ExecArgs) {
   logger.info(`الخصائص: ${attrByCode.size}`);
 
   // ── التصنيفات ──────────────────────────────────────────────────
-  const categories = await productModule.listProductCategories({});
+  //
+  // 🔴 و`select` ليس تحسيناً: بدونه **لا يُعيد `listProductCategories`
+  // حقلَ `name` أصلاً**. فتصير الخريطةُ `{ undefined → آخرُ تصنيف }`،
+  // ويقول الفحصُ «لا تصنيفَ بهذا الاسم» فيُنشئ من جديد — فيرتطم
+  // بـ«handle already exists».
+  //
+  // ولم يظهر هذا في CI أبداً لأن قاعدتَه تُخلق فارغةً في كل تشغيلة:
+  // لا شيءَ ليُطابَق، فالفحصُ المعطَّل يعطي الجوابَ الصحيح بالصدفة.
+  // ولا يسقط إلا على قاعدةٍ باقية — أي على جهاز من يطوّر. (نفسُ صنفِ
+  // العطل الذي أسقط `verify-payments` عند الإعادة.)
+  const categories = await productModule.listProductCategories(
+    {},
+    { select: ["id", "name", "handle"] }
+  );
   const catByName = new Map(categories.map((c: any) => [c.name, c]));
 
   for (const name of Object.keys(CATEGORY_ATTRIBUTES)) {
@@ -112,6 +131,7 @@ export default async function seedCatalog({ container }: ExecArgs) {
       description: "جوال آيفون ١٥ برو بشاشة سوبر ريتينا",
       category: "إلكترونيات",
       attrs: { color: "أسود", storage: "256 جيجا", origin: "الصين" },
+      en: { description: "iPhone 15 Pro with a Super Retina display" },
     },
     {
       title: "Samsung Galaxy S24",
@@ -119,17 +139,29 @@ export default async function seedCatalog({ container }: ExecArgs) {
       description: "جوال سامسونج جالاكسي إس ٢٤",
       category: "إلكترونيات",
       attrs: { color: "أزرق", storage: "512 جيجا", origin: "فيتنام" },
+      en: { description: "Samsung Galaxy S24 smartphone" },
     },
     {
+      // 🔴 **المنتجُ الذي تُقاس عليه البوّابة**: عنوانُه عربيٌّ خالص،
+      // فظهورُه إنجليزياً في `/en` لا يُفسَّر إلا بترجمةٍ من القاعدة.
       title: "قميص قطن",
       handle: "cotton-shirt",
       description: "قميصٌ قطنيٌّ رجاليّ",
       category: "ملابس",
       attrs: { size: "L", color: "أبيض", material: "قطن" },
+      en: { title: "Cotton Shirt", description: "A men's cotton shirt" },
     },
-  ];
+  ] as Array<{
+    title: string;
+    handle: string;
+    description: string;
+    category: string;
+    attrs: Record<string, string>;
+    en?: Record<string, string>;
+  }>;
 
-  const allProducts = await productModule.listProducts({});
+  // و`select` هنا لنفس السبب أعلاه: الخريطةُ مبنيّةٌ على `handle`.
+  const allProducts = await productModule.listProducts({}, { select: ["id", "handle"] });
   const prodByHandle = new Map(allProducts.map((p: any) => [p.handle, p]));
 
   for (const demo of DEMO_PRODUCTS) {
@@ -167,6 +199,48 @@ export default async function seedCatalog({ container }: ExecArgs) {
   // ── المرادفات ──────────────────────────────────────────────────
   for (const entry of SYNONYMS) await catalog.upsertSynonym(entry);
   logger.info(`المرادفات: ${SYNONYMS.length}`);
+
+  // ── الترجمة الإنجليزية (المرحلة ١١ب) ────────────────────────────
+  //
+  // 🔴 وليست زينةً في البذرة بل **شرطُ قابليةِ فحص البوّابة**، تماماً
+  // كما أن تصنيفَين مختلفَي الخصائص شرطُ فحص الفلاتر.
+  //
+  // فالبوّابة تسأل: هل `/en` متجرٌ إنجليزيّ أم واجهةٌ إنجليزيةٌ فوق
+  // محتوىً عربيّ؟ وهذا سؤالٌ **لا يُجاب بمنتجٍ عنوانُه `iPhone 15
+  // Pro`** — عنوانُه لاتينيٌّ في اللغتين، فيمرّ الفحصُ بلا أن يُثبت
+  // شيئاً. و«قميص قطن» وحدَه يفصل: إن ظهر عربياً في `/en` فالإلباسُ
+  // معطَّل، ولا سبيلَ إلى تفسيرٍ آخر.
+  //
+  // وما لا ترجمةَ له هنا مقصودٌ أيضاً: `subtitle` لا يُترجَم لأحدٍ،
+  // فيثبت أن الغائبَ يعود بأصله لا فارغاً.
+  let translated = 0;
+  for (const demo of DEMO_PRODUCTS) {
+    const product = prodByHandle.get(demo.handle) as any;
+    if (!product || !demo.en) continue;
+    for (const [field, value] of Object.entries(demo.en)) {
+      await catalog.setTranslation({
+        entity_type: "product",
+        entity_id: product.id,
+        field,
+        locale: "en",
+        value,
+      });
+      translated++;
+    }
+  }
+  for (const [name_ar, name_en] of Object.entries(CATEGORY_NAMES_EN)) {
+    const category = catByName.get(name_ar) as any;
+    if (!category) continue;
+    await catalog.setTranslation({
+      entity_type: "product_category",
+      entity_id: category.id,
+      field: "name",
+      locale: "en",
+      value: name_en,
+    });
+    translated++;
+  }
+  logger.info(`الترجمات (en): ${translated}`);
 
   logger.info("✅ بذرُ الكتالوج تمّ.");
 }

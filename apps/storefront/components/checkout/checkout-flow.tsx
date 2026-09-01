@@ -9,7 +9,7 @@ import { Price } from "@/components/price"
 import { PriceChangedPanel } from "@/components/checkout/price-changed-panel"
 import { OutOfStockPanel } from "@/components/checkout/out-of-stock-panel"
 import { listShippingOptions, requestQuote, selectShipping, confirmCheckout } from "@/lib/checkout-actions"
-import { toArabicDigits } from "@/lib/money"
+import { t, type Locale } from "@/lib/i18n"
 import type {
   Cart,
   Quote,
@@ -21,10 +21,10 @@ import type {
 
 type Step = "address" | "shipping" | "payment"
 
-const STEPS: { id: Step; label: string; icon: typeof MapPin }[] = [
-  { id: "address", label: "العنوان", icon: MapPin },
-  { id: "shipping", label: "الشحن", icon: Truck },
-  { id: "payment", label: "الدفع", icon: CreditCard },
+const STEPS: { id: Step; labelKey: string; icon: typeof MapPin }[] = [
+  { id: "address", labelKey: "checkout.stepAddress", icon: MapPin },
+  { id: "shipping", labelKey: "checkout.stepShipping", icon: Truck },
+  { id: "payment", labelKey: "checkout.stepPayment", icon: CreditCard },
 ]
 
 function newIdempotencyKey() {
@@ -35,9 +35,11 @@ function newIdempotencyKey() {
 export function CheckoutFlow({
   cart,
   shippingOptions,
+  locale,
 }: {
   cart: Cart
   shippingOptions: ShippingOption[]
+  locale: Locale
 }) {
   const router = useRouter()
   const [step, setStep] = useState<Step>("address")
@@ -107,7 +109,7 @@ export function CheckoutFlow({
       setQuote(q)
       setStep("payment")
     } catch {
-      setError("تعذّر تسعير طلبك. حاول مرة أخرى.")
+      setError(t(locale, "checkout.quoteFailed"))
     } finally {
       setPending(false)
     }
@@ -124,7 +126,7 @@ export function CheckoutFlow({
       // رفضَ المحاولة السابقة إلى الأبد (انظر تعليقَ المفتاح أعلاه).
       setIdempotencyKey(newIdempotencyKey())
     } catch {
-      setError("تعذّرت إعادة التسعير. حاول مرة أخرى.")
+      setError(t(locale, "checkout.repriceFailed"))
     } finally {
       setPending(false)
     }
@@ -138,7 +140,7 @@ export function CheckoutFlow({
     try {
       const res = await confirmCheckout(idempotencyKey)
       if (res.ok) {
-        router.push(`/orders/${res.order.id}/confirmation`)
+        router.push(`/${locale}/orders/${res.order.id}/confirmation`)
         return
       }
       if (res.code === "PRICE_CHANGED") {
@@ -153,7 +155,7 @@ export function CheckoutFlow({
       }
       setError(res.message)
     } catch {
-      setError("تعذّر إتمام الطلب. حاول مرة أخرى.")
+      setError(t(locale, "checkout.failed"))
     } finally {
       setPending(false)
     }
@@ -162,26 +164,26 @@ export function CheckoutFlow({
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
       <div className="min-w-0">
-        <Stepper current={step} />
+        <Stepper current={step} locale={locale} />
 
         <div className="mt-8">
           {step === "address" ? (
             <section aria-labelledby="address-heading" className="space-y-5">
               <h2 id="address-heading" className="text-lg font-bold">
-                عنوان الشحن
+                {t(locale, "checkout.addressHeading")}
               </h2>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="الاسم الأول" value={address.first_name} onChange={(v) => setAddress((a) => ({ ...a, first_name: v }))} />
-                <Field label="اسم العائلة" value={address.last_name} onChange={(v) => setAddress((a) => ({ ...a, last_name: v }))} />
-                <Field label="رقم الجوال" value={address.phone} onChange={(v) => setAddress((a) => ({ ...a, phone: v }))} inputMode="tel" />
-                <Field label="المدينة" value={address.city} onChange={(v) => setAddress((a) => ({ ...a, city: v }))} />
+                <Field label={t(locale, "checkout.firstName")} value={address.first_name} onChange={(v) => setAddress((a) => ({ ...a, first_name: v }))} />
+                <Field label={t(locale, "checkout.lastName")} value={address.last_name} onChange={(v) => setAddress((a) => ({ ...a, last_name: v }))} />
+                <Field label={t(locale, "checkout.phone")} value={address.phone} onChange={(v) => setAddress((a) => ({ ...a, phone: v }))} inputMode="tel" />
+                <Field label={t(locale, "checkout.city")} value={address.city} onChange={(v) => setAddress((a) => ({ ...a, city: v }))} />
                 <div className="sm:col-span-2">
-                  <Field label="العنوان" value={address.address_1} onChange={(v) => setAddress((a) => ({ ...a, address_1: v }))} />
+                  <Field label={t(locale, "checkout.address")} value={address.address_1} onChange={(v) => setAddress((a) => ({ ...a, address_1: v }))} />
                 </div>
-                <Field label="الرمز البريدي" value={address.postal_code} onChange={(v) => setAddress((a) => ({ ...a, postal_code: v }))} inputMode="numeric" />
+                <Field label={t(locale, "checkout.postalCode")} value={address.postal_code} onChange={(v) => setAddress((a) => ({ ...a, postal_code: v }))} inputMode="numeric" />
               </div>
               <Button type="button" className="h-11 px-6" disabled={!addressValid} onClick={() => setStep("shipping")}>
-                متابعة إلى الشحن
+                {t(locale, "checkout.toShipping")}
               </Button>
             </section>
           ) : null}
@@ -189,10 +191,10 @@ export function CheckoutFlow({
           {step === "shipping" ? (
             <section aria-labelledby="shipping-heading" className="space-y-5">
               <h2 id="shipping-heading" className="text-lg font-bold">
-                طريقة الشحن
+                {t(locale, "checkout.shippingHeading")}
               </h2>
               {shippingOptions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">لا توجد خيارات شحن متاحة لعنوانك حاليًا.</p>
+                <p className="text-sm text-muted-foreground">{t(locale, "checkout.noShipping")}</p>
               ) : (
                 <ul className="space-y-3">
                   {shippingOptions.map((opt) => (
@@ -213,7 +215,7 @@ export function CheckoutFlow({
                             ثم يُخصم الرقمُ الكامل. والتنسيقُ في مكانٍ
                             واحدٍ بحسابٍ صحيح (ADR-008). */}
                         <span className="text-sm text-muted-foreground">
-                          {opt.amount === 0 ? "مجاني" : <Price halalas={opt.amount} />}
+                          {opt.amount === 0 ? t(locale, "totals.free") : <Price locale={locale} halalas={opt.amount} />}
                         </span>
                       </label>
                     </li>
@@ -222,10 +224,10 @@ export function CheckoutFlow({
               )}
               <div className="flex gap-3">
                 <Button type="button" variant="outline" className="h-11 px-6" onClick={() => setStep("address")}>
-                  رجوع
+                  {t(locale, "checkout.back")}
                 </Button>
                 <Button type="button" className="h-11 px-6" disabled={!shippingOptionId || pending} onClick={goToReview}>
-                  {pending ? "جارٍ التسعير…" : "مراجعة الطلب"}
+                  {pending ? t(locale, "checkout.pricing") : t(locale, "checkout.review")}
                 </Button>
               </div>
             </section>
@@ -234,11 +236,12 @@ export function CheckoutFlow({
           {step === "payment" ? (
             <section aria-labelledby="payment-heading" className="space-y-5">
               <h2 id="payment-heading" className="text-lg font-bold">
-                المراجعة والدفع
+                {t(locale, "checkout.reviewHeading")}
               </h2>
 
               {priceChanged ? (
                 <PriceChangedPanel
+                  locale={locale}
                   message={priceChanged.message}
                   lines={priceChanged.lines}
                   totals={priceChanged.totals}
@@ -246,28 +249,28 @@ export function CheckoutFlow({
                   repricing={pending}
                 />
               ) : null}
-              {outOfStock ? <OutOfStockPanel message={outOfStock.message} lines={outOfStock.lines} /> : null}
+              {outOfStock ? <OutOfStockPanel message={outOfStock.message} lines={outOfStock.lines} locale={locale} /> : null}
 
               {quote ? (
                 <div className="rounded-lg border border-border p-4">
                   <p className="text-sm text-muted-foreground text-pretty">
-                    بالضغط على «تأكيد الطلب» فإنك توافق على دفع الإجمالي الظاهر في ملخص الطلب.
+                    {t(locale, "checkout.agree")}
                   </p>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-pretty">
                   {priceChanged
-                    ? "تغيّر السعر — اضغط «أعِد التسعير» للاطلاع على الإجمالي الجديد قبل التأكيد."
-                    : "أعِد التسعير للمتابعة."}
+                    ? t(locale, "checkout.repriceHint")
+                    : t(locale, "checkout.repriceFirst")}
                 </p>
               )}
 
               <div className="flex gap-3">
                 <Button type="button" variant="outline" className="h-11 px-6" onClick={() => setStep("shipping")}>
-                  رجوع
+                  {t(locale, "checkout.back")}
                 </Button>
                 <Button type="button" className="h-11 px-6" disabled={pending || !quote} onClick={confirm}>
-                  {pending ? "جارٍ التأكيد…" : "تأكيد الطلب"}
+                  {pending ? t(locale, "checkout.confirming") : t(locale, "checkout.confirm")}
                 </Button>
               </div>
             </section>
@@ -283,7 +286,7 @@ export function CheckoutFlow({
 
       <aside className="lg:sticky lg:top-24 lg:self-start">
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="mb-4 text-base font-semibold">ملخص الطلب</h2>
+          <h2 className="mb-4 text-base font-semibold">{t(locale, "totals.title")}</h2>
 
           {/* 🔴 **ملخّصٌ باطلٌ لا يُعرض برقم.**
               كان الملخّصُ يرجع إلى مجاميع السلّة كلّما غاب العرض. والسلّةُ
@@ -295,6 +298,7 @@ export function CheckoutFlow({
               فما ليس عرضاً سارياً لا يُعرض رقماً. */}
           {quote ? (
             <Totals
+              locale={locale}
               itemTotal={quote.item_total}
               shippingTotal={quote.shipping_total}
               taxTotal={quote.tax_total}
@@ -303,10 +307,11 @@ export function CheckoutFlow({
             />
           ) : priceChanged || outOfStock ? (
             <p className="text-sm text-muted-foreground text-pretty">
-              لم يعد هذا الملخّص سارياً. أعِد التسعير للاطلاع على الإجمالي الجديد قبل التأكيد.
+              {t(locale, "totals.stale")}
             </p>
           ) : (
             <Totals
+              locale={locale}
               itemTotal={cart.item_total}
               shippingTotal={cart.shipping_total}
               taxTotal={cart.tax_total}
@@ -320,7 +325,7 @@ export function CheckoutFlow({
   )
 }
 
-function Stepper({ current }: { current: Step }) {
+function Stepper({ current, locale }: { current: Step; locale: Locale }) {
   const currentIndex = STEPS.findIndex((s) => s.id === current)
   return (
     <ol className="flex items-center gap-2">
@@ -342,7 +347,7 @@ function Stepper({ current }: { current: Step }) {
             >
               {done ? <Check className="size-4" /> : <Icon className="size-4" />}
             </span>
-            <span className={active ? "text-sm font-bold" : "text-sm text-muted-foreground"}>{s.label}</span>
+            <span className={active ? "text-sm font-bold" : "text-sm text-muted-foreground"}>{t(locale, s.labelKey)}</span>
             {i < STEPS.length - 1 ? <span className="mx-1 hidden h-px flex-1 bg-border sm:block" /> : null}
           </li>
         )

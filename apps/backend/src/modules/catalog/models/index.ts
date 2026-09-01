@@ -5,4 +5,5 @@ export { CategoryAttribute } from "./category-attribute";
 export { ProductAttributeValue } from "./product-attribute-value";
 export { SearchSynonym } from "./search-synonym";
 export { SeoMeta } from "./seo-meta";
+export { Translation } from "./translation";
 export { UrlRedirect } from "./url-redirect";

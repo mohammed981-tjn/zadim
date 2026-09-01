@@ -1,5 +1,7 @@
 "use client"
 
+import { t, type Locale } from "@/lib/i18n"
+
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -9,11 +11,11 @@ import { Price } from "@/components/price"
 import { Totals } from "@/components/totals"
 import { buttonVariants } from "@/components/ui/button"
 import { removeFromCart, setLineQuantity } from "@/lib/cart-actions"
-import { toArabicDigits } from "@/lib/money"
+import { digits } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import type { Cart } from "@/lib/medusa"
 
-export function CartView({ cart: initial }: { cart: Cart }) {
+export function CartView({ cart: initial, locale }: { cart: Cart; locale: Locale }) {
   const router = useRouter()
   const [cart, setCart] = useState(initial)
   const [pendingLine, setPendingLine] = useState<string | null>(null)
@@ -29,7 +31,7 @@ export function CartView({ cart: initial }: { cart: Cart }) {
         if (next) setCart(next)
         router.refresh()
       } catch {
-        setError("تعذّر تحديث السلة. حاول مرة أخرى.")
+        setError(t(locale, "cart.updateFailed"))
       } finally {
         setPendingLine(null)
       }
@@ -64,7 +66,7 @@ export function CartView({ cart: initial }: { cart: Cart }) {
                     type="button"
                     onClick={() => mutate(line.id, () => removeFromCart(line.id))}
                     disabled={busy}
-                    aria-label={`إزالة ${line.title}`}
+                    aria-label={`${t(locale, "cart.remove")} ${line.title}`}
                     className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" aria-hidden="true" />
@@ -77,25 +79,25 @@ export function CartView({ cart: initial }: { cart: Cart }) {
                       type="button"
                       onClick={() => mutate(line.id, () => setLineQuantity(line.id, line.quantity - 1))}
                       disabled={busy}
-                      aria-label="إنقاص الكمية"
+                      aria-label={t(locale, "cart.decrease")}
                       className="flex size-9 items-center justify-center text-foreground disabled:opacity-40"
                     >
                       <Minus className="size-4" aria-hidden="true" />
                     </button>
                     <span className="tabular w-9 text-center text-sm font-semibold">
-                      {toArabicDigits(String(line.quantity))}
+                      {digits(locale, line.quantity)}
                     </span>
                     <button
                       type="button"
                       onClick={() => mutate(line.id, () => setLineQuantity(line.id, line.quantity + 1))}
                       disabled={busy}
-                      aria-label="زيادة الكمية"
+                      aria-label={t(locale, "cart.increase")}
                       className="flex size-9 items-center justify-center text-foreground disabled:opacity-40"
                     >
                       <Plus className="size-4" aria-hidden="true" />
                     </button>
                   </div>
-                  <Price halalas={line.total} className="text-base font-semibold" />
+                  <Price locale={locale} halalas={line.total} className="text-base font-semibold" />
                 </div>
               </div>
             </li>
@@ -104,8 +106,8 @@ export function CartView({ cart: initial }: { cart: Cart }) {
       </ul>
 
       <aside className="space-y-4 rounded-2xl border border-border bg-card p-5 lg:sticky lg:top-24">
-        <h2 className="text-lg font-bold">ملخّص الطلب</h2>
-        <Totals
+        <h2 className="text-lg font-bold">{t(locale, "totals.title")}</h2>
+        <Totals locale={locale}
           itemTotal={cart.item_total}
           shippingTotal={cart.shipping_total}
           taxTotal={cart.tax_total}
@@ -117,14 +119,14 @@ export function CartView({ cart: initial }: { cart: Cart }) {
             {error}
           </p>
         ) : null}
-        <Link href="/checkout" className={buttonVariants({ className: "h-12 w-full text-base font-semibold" })}>
-          إتمام الشراء
+        <Link href={`/${locale}/checkout`} className={buttonVariants({ className: "h-12 w-full text-base font-semibold" })}>
+          {t(locale, "cart.checkout")}
         </Link>
         <Link
-          href="/"
+          href={`/${locale}`}
           className="block text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
-          متابعة التسوّق
+          {t(locale, "cart.continue")}
         </Link>
       </aside>
     </div>

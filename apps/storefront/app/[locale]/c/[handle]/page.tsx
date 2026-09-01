@@ -3,25 +3,26 @@ import { Container } from "@/components/container"
 import { ProductGrid } from "@/components/product-grid"
 import { EmptyState, ErrorState } from "@/components/states"
 import { getCategoryProducts } from "@/lib/medusa"
-import { toArabicDigits } from "@/lib/money"
+import { digits } from "@/lib/money"
+import { t, type Locale } from "@/lib/i18n"
 
-type Params = { handle: string }
+type Params = { handle: string; locale: Locale }
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
-  const { handle } = await params
-  return { title: `${decodeURIComponent(handle)} — زادم` }
+  const { handle, locale } = await params
+  return { title: `${decodeURIComponent(handle)} — ${t(locale, "site.name")}` }
 }
 
 export default async function CategoryPage({ params }: { params: Promise<Params> }) {
-  const { handle } = await params
+  const { handle, locale } = await params
 
   let data
   try {
-    data = await getCategoryProducts(handle)
+    data = await getCategoryProducts(handle, locale)
   } catch {
     return (
       <Container className="py-16">
-        <ErrorState title="تعذّر تحميل القسم" />
+        <ErrorState title={t(locale, "category.loadFailed")} />
       </Container>
     )
   }
@@ -30,10 +31,10 @@ export default async function CategoryPage({ params }: { params: Promise<Params>
     return (
       <Container className="py-16">
         <EmptyState
-          title="القسم غير موجود"
-          description="لم نعثر على هذا القسم. تصفّح بقية المتجر من الصفحة الرئيسية."
-          actionHref="/"
-          actionLabel="العودة للرئيسية"
+          title={t(locale, "category.notFound")}
+          description={t(locale, "category.notFoundHint")}
+          actionHref={`/${locale}`}
+          actionLabel={t(locale, "home.backHome")}
         />
       </Container>
     )
@@ -51,18 +52,20 @@ export default async function CategoryPage({ params }: { params: Promise<Params>
           </p>
         ) : null}
         <p className="tabular text-sm text-muted-foreground">
-          {toArabicDigits(String(count))} منتج
+          {t(locale, "category.count", {
+            count: digits(locale, count),
+          })}
         </p>
       </header>
 
       {products.length ? (
-        <ProductGrid products={products} priorityCount={4} />
+        <ProductGrid products={products} locale={locale} priorityCount={4} />
       ) : (
         <EmptyState
-          title="لا توجد منتجات في هذا القسم"
-          description="تصفّح بقية الأقسام من الصفحة الرئيسية."
-          actionHref="/"
-          actionLabel="العودة للرئيسية"
+          title={t(locale, "category.empty")}
+          description={t(locale, "category.emptyHint")}
+          actionHref={`/${locale}`}
+          actionLabel={t(locale, "home.backHome")}
         />
       )}
     </Container>

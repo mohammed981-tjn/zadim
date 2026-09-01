@@ -1,5 +1,7 @@
 "use client"
 
+import { t, type Locale } from "@/lib/i18n"
+
 import { TrendingDown, TrendingUp } from "lucide-react"
 import { Price } from "@/components/price"
 import { Button } from "@/components/ui/button"
@@ -11,12 +13,14 @@ import type { PriceChangedLine, QuotedTotals } from "@/lib/medusa"
  * auto-accept a new price; the customer must press «أعِد التسعير».
  */
 export function PriceChangedPanel({
+  locale,
   message,
   lines,
   totals,
   onReprice,
   repricing,
 }: {
+  locale: Locale
   message: string
   lines: PriceChangedLine[]
   totals?: QuotedTotals
@@ -29,9 +33,9 @@ export function PriceChangedPanel({
       className="space-y-5 rounded-2xl border border-destructive/30 bg-destructive/5 p-5 sm:p-6"
     >
       <div className="space-y-1">
-        <h2 className="text-lg font-bold">تغيّرت الأسعار</h2>
+        <h2 className="text-lg font-bold">{t(locale, "priceChanged.title")}</h2>
         <p className="text-sm text-muted-foreground text-pretty">
-          {message || "تغيّرت أسعار بعض المنتجات منذ أن أضفتها إلى سلّتك. راجع التغييرات قبل المتابعة."}
+          {message || t(locale, "priceChanged.body")}
         </p>
       </div>
 
@@ -40,13 +44,13 @@ export function PriceChangedPanel({
           نفسُه، ولا يُترك الصندوقُ فارغاً تحت عنوانٍ يشكو. */}
       {!lines.length && totals ? (
         <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4">
-          <span className="text-sm font-medium">إجمالي الطلب</span>
+          <span className="text-sm font-medium">{t(locale, "priceChanged.orderTotal")}</span>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-muted-foreground line-through">
-              <Price halalas={totals.quoted_total} />
+              <Price locale={locale} halalas={totals.quoted_total} />
             </span>
             <span className="font-semibold text-foreground">
-              <Price halalas={totals.current_total} />
+              <Price locale={locale} halalas={totals.current_total} />
             </span>
             <span
               className={`tabular inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium ${
@@ -58,7 +62,7 @@ export function PriceChangedPanel({
               ) : (
                 <TrendingDown className="size-3.5" aria-hidden="true" />
               )}
-              <Price halalas={totals.difference} />
+              <Price locale={locale} halalas={totals.difference} />
             </span>
           </div>
         </div>
@@ -73,15 +77,15 @@ export function PriceChangedPanel({
               <div>
                 <p className="text-sm font-medium text-pretty">{line.title}</p>
                 <p className="tabular text-xs text-muted-foreground">
-                  الكمية: {line.quantity.toLocaleString("ar-EG")}
+                  {t(locale, "product.quantity")}: {locale === "ar" ? line.quantity.toLocaleString("ar-EG") : line.quantity}
                 </p>
               </div>
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-muted-foreground line-through">
-                  <Price halalas={line.quoted_unit_price} />
+                  <Price locale={locale} halalas={line.quoted_unit_price} />
                 </span>
                 <span className="font-semibold text-foreground">
-                  <Price halalas={line.current_unit_price} />
+                  <Price locale={locale} halalas={line.current_unit_price} />
                 </span>
                 <span
                   className={`tabular inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium ${
@@ -93,7 +97,7 @@ export function PriceChangedPanel({
                   ) : (
                     <TrendingDown className="size-3.5" aria-hidden="true" />
                   )}
-                  <Price halalas={line.difference} />
+                  <Price locale={locale} halalas={line.difference} />
                 </span>
               </div>
             </li>
@@ -103,7 +107,7 @@ export function PriceChangedPanel({
       ) : null}
 
       <Button onClick={onReprice} disabled={repricing} className="h-11 w-full text-sm font-semibold sm:w-auto sm:px-8">
-        {repricing ? "جارٍ إعادة التسعير…" : "أعِد التسعير"}
+        {repricing ? t(locale, "priceChanged.repricing") : t(locale, "priceChanged.reprice")}
       </Button>
     </div>
   )

@@ -35,12 +35,54 @@ import { existsSync } from "node:fs";
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const WANT_LH = process.argv.includes("--lighthouse");
 
-/** المسارُ الذي يُفحص، واسمُه العربيّ في التقرير. */
+/** المسارُ الذي يُفحص (بلا بادئةِ لغة)، واسمُه العربيّ في التقرير. */
 const PAGES = [
   ["/", "الرئيسية"],
   ["/search?q=سماعة", "البحث"],
   ["/cart", "السلة"],
+  ["/p/zadim-headphones", "صفحة منتج"],
 ];
+
+/**
+ * اللغتان — **وكلُّ صفحةٍ تُفحص بهما** (المرحلة ١١ب).
+ *
+ * ── ولماذا لا تُفحص العربيةُ وحدَها ثم «يُفترَض» أن الإنجليزيةَ مثلُها ──
+ *
+ * لأنهما ليستا صفحةً واحدةً بترجمتَين: الاتجاهُ ينقلب، والخطُّ يتغيّر،
+ * والنصُّ يطول فينكسر تخطيطٌ كان سليماً بالعربية. وأكثرُ من ذلك:
+ * محتوى المتجر **عربيٌّ في القاعدة**، فصفحةٌ إنجليزيةُ الأزرارِ عربيةُ
+ * المنتجات تمرّ في كل فحصٍ لا يقرأ نصَّها.
+ */
+const LOCALES = [
+  {
+    code: "ar",
+    dir: "rtl",
+    label: "عربي",
+    // العربيةُ تُطلب: نصٌّ عربيٌّ يجب أن يظهر.
+    wantArabic: true,
+  },
+  {
+    code: "en",
+    dir: "ltr",
+    label: "إنجليزي",
+    wantArabic: false,
+  },
+];
+
+/** حرفٌ عربيّ. */
+const ARABIC = /[؀-ۿ]/;
+
+/**
+ * مفتاحُ ترجمةٍ ظهر خاماً على الشاشة: `nav.cart` · `totals.grand`.
+ *
+ * 🔴 وهذا أسوأُ من نصٍّ غيرِ مترجَم: النصُّ العربيُّ في صفحةٍ إنجليزية
+ * نقصٌ يفهمه الزائر، و`product.addToCart` **عطلٌ يراه**. ودالّةُ `t`
+ * تُعيد المفتاحَ عند الضياع عمداً — كي يُرى هنا لا كي يُشحن.
+ */
+const RAW_KEY = /(?:^|\s)[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+)*(?:\s|$)/;
+
+/** ما يُستثنى من فحص المفاتيح الخام: نصٌّ يشبه المفتاحَ وليس مفتاحاً. */
+const NOT_A_KEY = /@|\/|https?:|\.(com|sa|co|net|org|svg|png|jpg|webp)\b/i;
 
 /**
  * صفوفُ Tailwind الاتجاهيّة — **ما يجب ألّا يظهر في صفحةٍ عربية**.
@@ -60,6 +102,39 @@ const fail = (m) => {
   console.error(`  ⛔ ${m}`);
   failures++;
 };
+
+/**
+ * 🔴 **شاهدُ فاحص المفاتيح الخام** — قبل أن يُقاس به شيء.
+ *
+ * `RAW_KEY` تعبيرٌ نمطيّ، وتعبيرٌ نمطيٌّ لا يُطابِق شيئاً يُعطي «ولا
+ * مفتاحَ خام» على **كل** صفحة — وهو جوابُ فاحصٍ سليمٍ وجوابُ فاحصٍ
+ * أعمى سواءً بسواء. (وقد وقع هذا حرفياً في فاحص المَسح بالمرحلة ١١:
+ * أمسك واحداً من أربعةٍ لأن الشكلَ الذي توقّعتُه ليس الشكلَ الواقع.)
+ *
+ * فطُعمٌ يجب أن يُمسَك، وبريءٌ يجب ألّا يُمسَك — ويسقط الفحصُ كلُّه
+ * قبل أن يفتح متصفّحاً إن أخطأ في أيٍّ منهما.
+ */
+{
+  const bait = ["nav.cart", "totals.grand", "product.addToCart", "  search.resultsFor  "];
+  const innocent = [
+    "زادم",
+    "Zadim Wireless Headphones",
+    "٣٩٩٫٠٠ ر.س",
+    "hello@zadim.sa",
+    "zadim.sa",
+    "Shipped from the nearest warehouse, cash on delivery.",
+  ];
+  const missed = bait.filter((s) => !(RAW_KEY.test(s) && !NOT_A_KEY.test(s)));
+  const falseAlarms = innocent.filter((s) => RAW_KEY.test(s) && !NOT_A_KEY.test(s));
+
+  if (missed.length || falseAlarms.length) {
+    console.error("  ⛔ فاحصُ المفاتيح الخام لا يعمل — ولا يُبنى عليه شيء:");
+    if (missed.length) console.error(`     أفلت: ${missed.join(" · ")}`);
+    if (falseAlarms.length) console.error(`     أنذر باطلاً: ${falseAlarms.join(" · ")}`);
+    process.exit(1);
+  }
+  console.log("  ✅ شاهدُ فاحص المفاتيح: أمسك الأربعةَ ولم يُنذر على البريء");
+}
 
 /**
  * أين المتصفّح — و**لا مسارَ مبرمَجٌ افتراضياً**.
@@ -89,8 +164,10 @@ const ctx = await browser.newContext({
 });
 
 try {
-  for (const [path, label] of PAGES) {
-    console.log(`\n== ${label} (${path}) ==`);
+  for (const loc of LOCALES)
+  for (const [rawPath, label] of PAGES) {
+    const path = `/${loc.code}${rawPath}`;
+    console.log(`\n== ${label} — ${loc.label} (${path}) ==`);
     const page = await ctx.newPage();
     const pageErrors = [];
     page.on("pageerror", (e) => pageErrors.push(String(e).slice(0, 140)));
@@ -118,13 +195,16 @@ try {
       computedDir: getComputedStyle(document.body).direction,
     }));
 
-    root.dir === "rtl" && root.computedDir === "rtl"
-      ? pass("الاتجاه rtl على الجذر وعلى الجسم المحسوب")
-      : fail(`الاتجاه: dir=${root.dir} computed=${root.computedDir}`);
+    root.dir === loc.dir && root.computedDir === loc.dir
+      ? pass(`الاتجاه ${loc.dir} على الجذر وعلى الجسم المحسوب`)
+      : fail(`الاتجاه: dir=${root.dir} computed=${root.computedDir} — المنتظَر ${loc.dir}`);
 
-    String(root.lang ?? "").startsWith("ar")
+    // 🔴 و`lang` ليست زينةً ولا تُقاس بـ«يبدأ بـ»: قارئُ الشاشة يختار
+    // صوتَه منها، ومحرّكُ البحث يفهرس بها. و`lang="ar"` على صفحةٍ
+    // إنجليزيةٍ يُنطَق الإنجليزيُّ بلكنةٍ عربيةٍ حرفاً حرفاً.
+    root.lang === loc.code
       ? pass(`اللغة ${root.lang}`)
-      : fail(`اللغة ${root.lang} — والقارئُ الآليّ يقرؤها إنجليزيةً`);
+      : fail(`اللغة ${root.lang} — المنتظَر ${loc.code}`);
 
     // ── الصفوفُ الفيزيائية في كل عنصرٍ مرسوم ────────────────────
     const offenders = await page.evaluate((re) => {
@@ -150,11 +230,108 @@ try {
             .join(" · ")}`
         );
 
-    // ── نصٌّ عربيٌّ فعلاً ────────────────────────────────────────
+    // ── لغةُ النصّ المرسوم ──────────────────────────────────────
     const text = (await page.innerText("body")).trim();
-    /[؀-ۿ]/.test(text)
-      ? pass("والصفحةُ تحمل نصّاً عربياً")
-      : fail("لا حرفَ عربيٍّ في الصفحة — الواجهةُ ليست معرَّبة");
+
+    if (loc.wantArabic) {
+      ARABIC.test(text)
+        ? pass("والصفحةُ تحمل نصّاً عربياً")
+        : fail("لا حرفَ عربيٍّ في الصفحة — الواجهةُ ليست معرَّبة");
+    } else {
+      // 🔴 **هنا يُفصل «واجهةٌ مترجَمة» عن «متجرٌ بلغتين».**
+      //
+      // ترجمةُ الأزرار سهلةٌ ولا تُثبت شيئاً: عناوينُ المنتجات وكتلُ
+      // الرئيسية في القاعدة **بالعربية**. فصفحةٌ إنجليزيةُ الهيكل
+      // عربيةُ المحتوى تمرّ في كل فحصٍ لا يقرأ نصَّها المرسوم.
+      //
+      // والمقياسُ لا يقبل التجزئة: **ولا حرفَ عربيٍّ في الصفحة كلِّها**
+      // — لا في الترويسة ولا في اسم المنتج ولا في نصّ الكتلة.
+      //
+      // ── واستثناءان **معلَنان في الصفحة نفسها** لا في هذا الملفّ ──
+      //
+      // ١) `lang="ar"` — نصٌّ يُصرّح أنه عربيّ، كاسم اللغة في
+      //    المبدّل. وهو صحّةُ HTML قبل أن يكون استثناء.
+      // ٢) `data-user-content` — ما كتبه الزائرُ نفسُه (استعلامُ
+      //    البحث). وترجمتُه أو إخفاؤه عطلٌ لا إصلاح.
+      //
+      // 🔴 وأن يكون الاستثناءُ **في الصفحة** لا في الفاحص مقصود: قائمةٌ
+      // بيضاءُ هنا تُسكِت عطلاً حقيقياً بسطرٍ واحدٍ لا يراه أحد. أمّا
+      // `lang="ar"` فقرارٌ مكتوبٌ في الشيفرة، يُراجَع في `git diff`،
+      // ويحمل معناه للقارئ الآليّ أيضاً — فثمنُ إساءة استعماله ظاهر.
+      const arabicNodes = await page.evaluate(() => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const out = [];
+        const rx = /[؀-ۿ]/;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const value = (n.nodeValue ?? "").trim();
+          if (!value || !rx.test(value)) continue;
+          // `script`/`style`/`template` نصوصٌ لا تُعرض: بيانات Next
+          // المتسلسلة تحمل نصَّ الصفحة العربيَّ داخل `<script>`،
+          // وليست شيئاً يقرؤه الزائر.
+          if (n.parentElement?.closest("script, style, template, noscript")) continue;
+
+          let declared = false;
+          for (let el = n.parentElement; el; el = el.parentElement) {
+            if (el.hasAttribute("data-user-content")) { declared = true; break; }
+            const lang = el.getAttribute("lang");
+            if (lang) { declared = lang.startsWith("ar"); break; }
+          }
+          if (!declared) out.push(value.slice(0, 60));
+        }
+        return out;
+      });
+
+      arabicNodes.length === 0
+        ? pass("ولا حرفَ عربيٍّ غيرَ معلَنٍ في الصفحة — الهيكلُ والمحتوى كلاهما إنجليزيّ")
+        : fail(
+            `${arabicNodes.length} نصّاً عربياً في صفحةٍ إنجليزية — ` +
+              `أوّلُها: ${arabicNodes.slice(0, 3).map((l) => `«${l}»`).join(" · ")}`
+          );
+
+      // 🔴 **شاهدٌ موجبٌ على الصفحة الحقيقية.**
+      //
+      // «صفرُ مخالفات» جوابُ فاحصٍ سليمٍ وجوابُ فاحصٍ لا يرى — وقد
+      // وقع هذا مرّتين في هذا المشروع. فيُدسّ نصٌّ عربيٌّ بلا `lang`
+      // في الصفحة المرسومة نفسِها: إن لم يُمسَك فالخضرةُ أعلاه لا
+      // تعني شيئاً، ويسقط الفحص.
+      const caught = await page.evaluate(() => {
+        const bait = document.createElement("span");
+        bait.textContent = "طُعمُ البوّابة";
+        document.body.appendChild(bait);
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const rx = /[؀-ۿ]/;
+        let seen = false;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (!rx.test(n.nodeValue ?? "")) continue;
+          if (n.parentElement?.closest("script, style, template, noscript")) continue;
+          let declared = false;
+          for (let el = n.parentElement; el; el = el.parentElement) {
+            if (el.hasAttribute("data-user-content")) { declared = true; break; }
+            const lang = el.getAttribute("lang");
+            if (lang) { declared = lang.startsWith("ar"); break; }
+          }
+          if (!declared && n.nodeValue.includes("طُعم")) seen = true;
+        }
+        bait.remove();
+        return seen;
+      });
+
+      caught
+        ? pass("وشاهدُه الموجب: طُعمٌ عربيٌّ بلا `lang` أُمسِك — فالفاحصُ يرى")
+        : fail("الطُّعمُ العربيُّ لم يُمسَك — فحصُ العربية أعمى، وخضرتُه لا تعني شيئاً");
+    }
+
+    // ── 🔴 ولا مفتاحَ ترجمةٍ خامٍ مرئيّ ─────────────────────────
+    const rawKeys = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && RAW_KEY.test(l) && !NOT_A_KEY.test(l));
+
+    rawKeys.length === 0
+      ? pass("ولا مفتاحَ ترجمةٍ خامٍ على الشاشة")
+      : fail(
+          `مفاتيحُ خامٌ مرئية: ${rawKeys.slice(0, 3).map((l) => `«${l.slice(0, 40)}»`).join(" · ")}`
+        );
 
     // شاشةٌ فارغةٌ ليست نجاحاً: صفحةٌ تُفتح ولا تعرض شيئاً عطلٌ صامت.
     text.length > 40
@@ -220,45 +397,85 @@ try {
   // الوصول **سقوطٌ** أيضاً، لأن هذه البوّابةَ لا معنى لها بلا خلفيّة.
   const api = process.env.MEDUSA_URL ?? "http://localhost:9000";
   const pk = process.env.MEDUSA_PK ?? process.env.NEXT_PUBLIC_MEDUSA_PK ?? "";
-  console.log("\n== الرئيسيةُ تتبع القاعدة ==");
-  try {
-    const res = await fetch(`${api}/store/home`, {
-      headers: pk ? { "x-publishable-api-key": pk } : {},
-    });
-    if (!res.ok) {
-      fail(
-        `‏/store/home أعاد ${res.status}` +
-          (res.status === 400 && !pk
-            ? " — مفتاحُ النشر مفقود: صدّر `MEDUSA_PK`"
-            : "")
-      );
-    } else {
+
+  for (const loc of LOCALES) {
+    console.log(`\n== الرئيسيةُ تتبع القاعدة — ${loc.label} ==`);
+    try {
+      const suffix = loc.code === "ar" ? "" : `?locale=${loc.code}`;
+      const res = await fetch(`${api}/store/home${suffix}`, {
+        headers: pk ? { "x-publishable-api-key": pk } : {},
+      });
+      if (!res.ok) {
+        fail(
+          `‏/store/home أعاد ${res.status}` +
+            (res.status === 400 && !pk ? " — مفتاحُ النشر مفقود: صدّر `MEDUSA_PK`" : "")
+        );
+        continue;
+      }
       const { blocks } = await res.json();
       if (blocks.length < 2) {
         fail(`القاعدةُ فيها ${blocks.length} كتلة — والمقارنةُ تحتاج اثنتين فأكثر`);
-      } else {
-        const page = await ctx.newPage();
-        await page.goto(BASE + "/", { waitUntil: "networkidle" });
-        const rendered = await page.$$eval("[data-block-type]", (els) =>
-          els.map((e) => e.getAttribute("data-block-type"))
-        );
-        await page.close();
-
-        if (rendered.length === 0) {
-          fail(
-            "لا عنصرَ يحمل `data-block-type` — أضِفه في مُصيِّر الكتل كي يُفحص الترتيب"
-          );
-        } else {
-          const expected = blocks.map((b) => b.type).join(" ⇐ ");
-          const actual = rendered.join(" ⇐ ");
-          expected === actual
-            ? pass(`الترتيبُ المرسوم يطابق القاعدة (${blocks.length} كتلة): ${actual}`)
-            : fail(`القاعدة: ${expected} · المرسوم: ${actual}`);
-        }
+        continue;
       }
+
+      const page = await ctx.newPage();
+      await page.goto(`${BASE}/${loc.code}/`, { waitUntil: "networkidle" });
+      const rendered = await page.$$eval("[data-block-type]", (els) =>
+        els.map((e) => e.getAttribute("data-block-type"))
+      );
+      await page.close();
+
+      if (rendered.length === 0) {
+        fail("لا عنصرَ يحمل `data-block-type` — أضِفه في مُصيِّر الكتل كي يُفحص الترتيب");
+        continue;
+      }
+      const expected = blocks.map((b) => b.type).join(" ⇐ ");
+      const actual = rendered.join(" ⇐ ");
+      expected === actual
+        ? pass(`الترتيبُ المرسوم يطابق القاعدة (${blocks.length} كتلة): ${actual}`)
+        : fail(`القاعدة: ${expected} · المرسوم: ${actual}`);
+
+      // 🔴 **والدليلُ القاطع على أن المحتوى بيانات**: نصُّ الكتلة في
+      // `/en` هو ما تُعيده القاعدةُ لـ`?locale=en` — لا نصٌّ ثابتٌ في
+      // الواجهة ولا ترجمةٌ في الكود.
+      if (loc.code === "en") {
+        const heroTitle = blocks.find((b) => b.type === "hero")?.payload?.title ?? "";
+        heroTitle && !ARABIC.test(heroTitle)
+          ? pass(`وعنوانُ الواجهة من القاعدة إنجليزيّ: «${heroTitle}»`)
+          : fail(
+              `عنوانُ الواجهة في «/store/home?locale=en» «${heroTitle}» — ` +
+                `المحتوى لا يُترجَم، والواجهةُ وحدَها هي المترجَمة`
+            );
+      }
+    } catch (e) {
+      fail(`تعذّر الوصولُ إلى ${api}/store/home (${String(e.message).slice(0, 60)})`);
     }
+  }
+
+  // ── الجذرُ بلا لغةٍ يحوّل، والمبدّلُ يحفظ المسار ────────────────
+  //
+  // ⚠️ زائرٌ يفتح `/` أو رابطاً قديماً بلا بادئةٍ يجب ألّا يرى ٤٠٤:
+  // بادئةُ اللغة تفصيلٌ داخليّ، وروابطُ ما قبل المرحلة ١١ب لا تزال
+  // تُشارَك.
+  console.log("\n== التحويلُ ومبدّلُ اللغة ==");
+  try {
+    const page = await ctx.newPage();
+    const res = await page.goto(BASE + "/", { waitUntil: "networkidle" });
+    const url = new URL(page.url());
+    url.pathname.startsWith("/ar")
+      ? pass(`«/» يحوّل إلى ${url.pathname} — والعربيةُ الافتراضية`)
+      : fail(`«/» انتهى إلى ${url.pathname} (${res?.status()})`);
+
+    // ومبدّلُ اللغة رابطٌ حقيقيّ يحفظ المسار: زائرٌ في صفحة منتجٍ
+    // يبدّل اللغة فيبقى في نفس المنتج، لا يُقذف إلى الرئيسية.
+    await page.goto(`${BASE}/ar/p/zadim-headphones`, { waitUntil: "networkidle" });
+    const href = await page.getAttribute('a[href*="/en/"]', "href").catch(() => null);
+    href === "/en/p/zadim-headphones"
+      ? pass(`ومبدّلُ اللغة يحفظ المسار: ${href}`)
+      : fail(`مبدّلُ اللغة يشير إلى «${href}» لا إلى «/en/p/zadim-headphones»`);
+    await page.close();
   } catch (e) {
-    fail(`تعذّر الوصولُ إلى ${api}/store/home (${String(e.message).slice(0, 60)})`);
+    fail(`تعذّر فحصُ التحويل (${String(e.message).slice(0, 80)})`);
   }
 
   // ── Lighthouse إن طُلب وكان مثبَّتاً ───────────────────────────
@@ -282,18 +499,56 @@ try {
         chromeFlags: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage"],
       });
 
-      const result = await lighthouse(BASE, {
-        port: chrome.port,
-        output: "json",
-        formFactor: "mobile",
-        screenEmulation: { mobile: true, width: 390, height: 844, deviceScaleFactor: 3 },
-        onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
-      });
-      for (const [, cat] of Object.entries(result.lhr.categories)) {
-        const score = Math.round(cat.score * 100);
-        score >= 90
-          ? pass(`${cat.title}: ${score}`)
-          : fail(`${cat.title}: ${score} — الحدُّ ٩٠`);
+      // 🔴 **والدرجةُ تُقاس على اللغتين، والعتبةُ ٩٠ لكلٍّ.**
+      //
+      // ليستا صفحةً واحدة: الاتجاهُ ينقلب فيتغيّر التخطيط، والنصُّ
+      // الإنجليزيُّ أطولُ فيزيح ما تحته (CLS)، والخطُّ قد يختلف
+      // فيتغيّر LCP. ودرجةٌ عربيةٌ خضراءُ لا تقول شيئاً عن `/en`.
+      // 🔴 **درجةُ الأداء وسيطُ ثلاث تشغيلات، لا تشغيلةً واحدة.**
+      //
+      // قِيس على نفس البناء بلا تغييرِ سطر: `ar 89 · en 97` ثم
+      // `ar 93 · en 89`. فالفرقُ ضجيجُ آلةٍ مزدحمة لا فرقٌ بين لغتين
+      // — والدليلُ أن الساقطَ تبدّل بينهما.
+      //
+      // وبوّابةٌ تسقط عشوائياً نصفَ الوقت لا تحرس شيئاً بل **تُعلّم
+      // قارئَها تجاهلَ الأحمر**، وهو ما تحذّر منه ورشةُ CI نفسُها في
+      // فحص صحّة Postgres. والوسيطُ ما يوصي به Lighthouse لهذا
+      // بالضبط — **والعتبةُ تبقى ٩٠**، لا تُخفَّض لتمرّ.
+      //
+      // وبقيةُ الفئات (الوصول · الممارسات · SEO) حتميّةٌ لا تتذبذب،
+      // فتُقاس من التشغيلة الأولى ولا تُكرَّر.
+      const RUNS = 3;
+      for (const loc of LOCALES) {
+        const target = `${BASE}/${loc.code}`;
+        const perf = [];
+        let first = null;
+
+        for (let i = 0; i < RUNS; i++) {
+          const result = await lighthouse(target, {
+            port: chrome.port,
+            output: "json",
+            formFactor: "mobile",
+            screenEmulation: { mobile: true, width: 390, height: 844, deviceScaleFactor: 3 },
+            onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
+          });
+          first ??= result.lhr.categories;
+          perf.push(Math.round(result.lhr.categories.performance.score * 100));
+        }
+
+        const median = [...perf].sort((a, b) => a - b)[Math.floor(RUNS / 2)];
+        console.log(`  — ${loc.label} (${target}) · الأداء: ${perf.join(" · ")}`);
+
+        median >= 90
+          ? pass(`Performance (وسيط ${RUNS}): ${median}`)
+          : fail(`Performance [${loc.code}] (وسيط ${RUNS}): ${median} — الحدُّ ٩٠`);
+
+        for (const [key, cat] of Object.entries(first)) {
+          if (key === "performance") continue;
+          const score = Math.round(cat.score * 100);
+          score >= 90
+            ? pass(`${cat.title}: ${score}`)
+            : fail(`${cat.title} [${loc.code}]: ${score} — الحدُّ ٩٠`);
+        }
       }
     } catch (e) {
       // ولا يُدَّعى نجاحٌ لم يقع: سقوطُ القياس يُقال بسببه، ولا يُعدّ مروراً.

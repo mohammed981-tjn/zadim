@@ -1,5 +1,7 @@
 "use client"
 
+import { t, type Locale } from "@/lib/i18n"
+
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
@@ -14,7 +16,7 @@ function isOut(v: ProductVariant) {
   return typeof v.inventory_quantity === "number" && v.inventory_quantity <= 0
 }
 
-export function BuyBox({ product }: { product: Product }) {
+export function BuyBox({ product, locale }: { product: Product; locale: Locale }) {
   const router = useRouter()
   const variants = product.variants ?? []
   const firstAvailable = variants.find((v) => !isOut(v)) ?? variants[0]
@@ -39,7 +41,7 @@ export function BuyBox({ product }: { product: Product }) {
         setAdded(true)
         router.refresh()
       } catch {
-        setError("تعذّرت إضافة المنتج إلى السلة. حاول مرة أخرى.")
+        setError(t(locale, "product.addFailed"))
       }
     })
   }
@@ -54,14 +56,14 @@ export function BuyBox({ product }: { product: Product }) {
       </div>
 
       {price != null ? (
-        <Price halalas={price} className="text-2xl font-bold sm:text-3xl" symbolClassName="text-base" />
+        <Price locale={locale} halalas={price} className="text-2xl font-bold sm:text-3xl" symbolClassName="text-base" />
       ) : (
-        <p className="text-lg text-muted-foreground">السعر عند الطلب</p>
+        <p className="text-lg text-muted-foreground">{t(locale, "product.priceOnRequest")}</p>
       )}
 
       {variants.length > 1 ? (
         <div className="space-y-3">
-          <span className="block text-sm font-medium">اختر الخيار</span>
+          <span className="block text-sm font-medium">{t(locale, "product.chooseOption")}</span>
           <div className="flex flex-wrap gap-2">
             {variants.map((v) => {
               const out = isOut(v)
@@ -93,24 +95,24 @@ export function BuyBox({ product }: { product: Product }) {
 
       {/* Quantity */}
       <div className="flex items-center gap-4">
-        <span className="text-sm font-medium">الكمية</span>
+        <span className="text-sm font-medium">{t(locale, "product.quantity")}</span>
         <div className="flex items-center rounded-xl border border-border">
           <button
             type="button"
             onClick={() => setQty((q) => Math.max(1, q - 1))}
             disabled={qty <= 1}
-            aria-label="إنقاص الكمية"
+            aria-label={t(locale, "cart.decrease")}
             className="flex size-10 items-center justify-center text-foreground disabled:opacity-40"
           >
             <Minus className="size-4" aria-hidden="true" />
           </button>
           <span className="tabular w-10 text-center text-sm font-semibold" aria-live="polite">
-            {qty.toLocaleString("ar-EG")}
+            {locale === "ar" ? qty.toLocaleString("ar-EG") : qty}
           </span>
           <button
             type="button"
             onClick={() => setQty((q) => q + 1)}
-            aria-label="زيادة الكمية"
+            aria-label={t(locale, "cart.increase")}
             className="flex size-10 items-center justify-center text-foreground"
           >
             <Plus className="size-4" aria-hidden="true" />
@@ -124,17 +126,21 @@ export function BuyBox({ product }: { product: Product }) {
           disabled={pending || soldOut || !variantId}
           className="h-12 w-full text-base font-semibold"
         >
-          {soldOut ? "نفد من المخزون" : pending ? "جارٍ الإضافة…" : "أضف إلى السلة"}
+          {soldOut
+            ? t(locale, "product.soldOut")
+            : pending
+              ? t(locale, "product.adding")
+              : t(locale, "product.addToCart")}
         </Button>
 
         {added ? (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-success/30 bg-success/5 px-4 py-3 text-sm">
             <span className="flex items-center gap-2 text-success">
               <Check className="size-4" aria-hidden="true" />
-              تمت الإضافة إلى السلة
+              {t(locale, "product.added")}
             </span>
-            <Link href="/cart" className={buttonVariants({ variant: "outline", size: "sm", className: "h-9" })}>
-              عرض السلة
+            <Link href={`/${locale}/cart`} className={buttonVariants({ variant: "outline", size: "sm", className: "h-9" })}>
+              {t(locale, "product.viewCart")}
             </Link>
           </div>
         ) : null}
@@ -148,7 +154,7 @@ export function BuyBox({ product }: { product: Product }) {
 
       {product.description ? (
         <div className="border-t border-border pt-6">
-          <h2 className="mb-2 text-base font-semibold">تفاصيل المنتج</h2>
+          <h2 className="mb-2 text-base font-semibold">{t(locale, "product.details")}</h2>
           <p className="text-sm leading-relaxed text-muted-foreground text-pretty">{product.description}</p>
         </div>
       ) : null}

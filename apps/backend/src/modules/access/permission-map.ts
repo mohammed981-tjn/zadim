@@ -98,6 +98,11 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/catalog\/redirects(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/synonyms(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
+  // والترجمةُ نصٌّ يراه الزبون كما يراه في المدوّنة والـSEO — فبيتُها
+  // `cms.manage` لا `products.write`: من يكتب لغةَ المتجر ليس بالضرورة
+  // من يضبط أسعارَه ومخزونَه.
+  { pattern: /^\/catalog\/translations(\/|$)/, methods: ["GET"], permission: "products.read" },
+  { pattern: /^\/catalog\/translations(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
 
   // ── وحدة warehouse ──────────────────────────────────────────────
   // الدفترُ **للقراءة فقط**: لا مسارَ كتابةٍ له أصلاً — يكتبه مُطلِقُ

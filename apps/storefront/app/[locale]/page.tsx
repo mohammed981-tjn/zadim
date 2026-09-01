@@ -2,20 +2,23 @@ import { Container } from "@/components/container"
 import { BlockRenderer } from "@/components/home/block-renderer"
 import { EmptyState, ErrorState } from "@/components/states"
 import { getHome } from "@/lib/medusa"
+import { t, type Locale } from "@/lib/i18n"
 
 export const revalidate = 60
 
-export default async function HomePage() {
+export default async function HomePage({ params }: { params: Promise<{ locale: Locale }> }) {
+  const { locale } = await params
+
   let blocks
   try {
-    const home = await getHome()
+    const home = await getHome(locale)
     blocks = home.blocks
   } catch {
     return (
       <Container className="py-16">
         <ErrorState
-          title="تعذّر تحميل الصفحة الرئيسية"
-          description="لم نتمكّن من الوصول إلى المتجر الآن. يرجى تحديث الصفحة بعد قليل."
+          title={t(locale, "home.loadFailed")}
+          description={t(locale, "home.loadFailedHint")}
         />
       </Container>
     )
@@ -24,10 +27,7 @@ export default async function HomePage() {
   if (!blocks.length) {
     return (
       <Container className="py-16">
-        <EmptyState
-          title="لا يوجد محتوى بعد"
-          description="لم تتم إضافة أي أقسام إلى الصفحة الرئيسية حتى الآن."
-        />
+        <EmptyState title={t(locale, "home.emptyTitle")} description={t(locale, "home.emptyBody")} />
       </Container>
     )
   }
@@ -35,7 +35,7 @@ export default async function HomePage() {
   return (
     <div>
       {blocks.map((block) => (
-        <BlockRenderer key={block.id} block={block} />
+        <BlockRenderer key={block.id} block={block} locale={locale} />
       ))}
     </div>
   )
