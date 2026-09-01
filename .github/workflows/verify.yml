@@ -136,6 +136,12 @@ jobs:
       - name: بوّابة المرحلة ١٠ — المرتجعات
         run: npx medusa exec ./src/scripts/verify-returns.ts
 
+      # وبوّابةُ المرحلة ١١: التسويقُ من الصندوق لا من ماسح. وأهمُّ
+      # فحصيها: الحدثُ يقع ويُلغى مع معاملته، **وفاحصُ الماسح يُمسك
+      # سطراً ماسحاً مصطنَعاً** — وإلا فصفرُه لا يعني شيئاً.
+      - name: بوّابة المرحلة ١١ — التسويق
+        run: npx medusa exec ./src/scripts/verify-marketing.ts
+
       - name: بوّابة المرحلة ١ — الصلاحيات
         run: npx medusa exec ./src/scripts/verify-access.ts
 
