@@ -40,8 +40,23 @@ COPY --from=build /app/.medusa/server ./
 
 # ⚠️ نقطةُ تثبيت القرص الدائم. وبلا قرصٍ هنا **تُفقد كلُّ صور المنتجات
 # مع كل نشرة** — انظر تعليقَ وحدة الملفّات في `medusa-config.ts`.
+#
+# ── ولماذا لا `VOLUME ["/app/static"]` ───────────────────────────
+#
+# لأن Railway **يرفض الصورةَ كلَّها** إن وُجدت، ولا يبني:
+#
+#   dockerfile invalid: docker VOLUME at Line 44 is not supported,
+#   use Railway Volumes
+#
+# وقِيس على أوّل بناءٍ حقيقيٍّ (2026-09-03) — لا استنتاجاً. والسببُ
+# أن قرصَ Railway يُثبَّت من لوحته على المسار، فتعليمةُ `VOLUME`
+# تنازعُه لا تعينه.
+#
+# فيبقى `mkdir` وحدَه: يضمن وجودَ المجلّد حين لا قرصَ (تشغيلٌ محلّيّ
+# أو منصّةٌ أخرى)، ولا يمنع تثبيتَ قرصٍ فوقه. **والقرصُ الدائم شرطٌ
+# قائمٌ كما هو** — يُضبط في Railway على `/app/static`، وغيابُه عطبٌ
+# لا يظهر يومَ النشر بل بعد أسبوعٍ حين تختفي الصور.
 RUN mkdir -p /app/static
-VOLUME ["/app/static"]
 
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
