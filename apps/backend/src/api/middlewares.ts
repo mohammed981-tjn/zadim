@@ -10,6 +10,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { ACCESS_MODULE } from "../modules/access";
 import type AccessModuleService from "../modules/access/service";
 import { isExempt, readField, ruleFor } from "../modules/access/permission-map";
+import { rateLimit } from "../modules/access/rate-limit";
 import { overlayTranslations } from "../modules/catalog/overlay";
 
 /**
@@ -191,9 +192,23 @@ const upload = multer({
 
 export default defineMiddlewares({
   routes: [
+    // ── تحديدُ المعدّل أوّلاً — قبل أيّ عملٍ يُكلّف ────────────────────
+    //
+    // 🔴 و`/auth/*` **قبل غيره** في الأهمية: هناك تُجرَّب كلمات المرور،
+    // وهو المسارُ الوحيد الذي لا يحرسه شيءٌ آخر — حارسُ الصلاحيات أدناه
+    // يعمل **بعد** المصادقة، فمن لم يدخل بعدُ لا يمرّ به أصلاً.
+    //
+    // ⚠️ وثلاثةُ مُطابِقاتٍ بصيغة `/x/*` لا أسماءٌ صريحة: قِيس في
+    // المرحلة ١١ب أن `matcher: "/store/products"` لا يُطابق شيئاً —
+    // لا نداءَ ولا خطأ. والحصرُ يقع داخل الوسيط بسوابق السياسات.
+    { matcher: "/auth/*", middlewares: [rateLimit] },
+    { matcher: "/store/*", middlewares: [rateLimit] },
     {
       matcher: "/admin/*",
-      middlewares: [requirePermission, recordMutation],
+      // والترتيبُ مقصود: العدُّ قبل الصلاحية. فحصُ الصلاحية يقرأ
+      // القاعدةَ مرّتين، وفيضٌ من نداءاتٍ مرفوضةٍ يُغرقها — فيصير
+      // الحارسُ نفسُه طريقَ الإسقاط.
+      middlewares: [rateLimit, requirePermission, recordMutation],
     },
     {
       matcher: "/admin/catalog/images",

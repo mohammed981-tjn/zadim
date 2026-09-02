@@ -1,0 +1,10 @@
+{
+  "apps/backend": {
+    "high": 69,
+    "moderate": 7
+  },
+  "apps/storefront": {
+    "high": 0,
+    "moderate": 0
+  }
+}

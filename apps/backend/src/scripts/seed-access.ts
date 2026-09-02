@@ -165,6 +165,66 @@ const ROLES: Array<{
   },
 ];
 
+/**
+ * سياساتُ تحديد المعدّل الافتراضية (المرحلة ١٥).
+ *
+ * ⚠️ **هذه بذورٌ لا ثوابت**: تُكتب مرّةً إن غابت، ولا تُكتب فوق ما
+ * عدّله المدير. فمن ضبط رقماً في اللوحة لا تُعيده نشرةٌ تالية إلى
+ * الافتراض — وذاك صنفُ العطب الذي لا يُلاحَظ إلا بعد الهجوم.
+ *
+ * والأرقامُ أدناه **نقطةُ بدءٍ محافظة**، تُضبط بالمشاهدة بعد الإطلاق.
+ */
+const RATE_LIMITS: Array<{
+  name: string;
+  path_prefix: string;
+  methods: string;
+  window_seconds: number;
+  max_requests: number;
+  scope_by: "ip" | "actor" | "ip_actor";
+}> = [
+  {
+    // 🔴 الأهمّ في الجدول. حشوُ بيانات الاعتماد يجرّب آلافاً في
+    // الدقيقة، وعشرٌ تكفي إنساناً نسي كلمته — الفرق بين الاثنين
+    // ثلاثةُ أوامرِ قدر، فلا يحتاج الحدُّ دقّةً ليعمل.
+    name: "auth_attempts",
+    path_prefix: "/auth",
+    methods: "POST",
+    window_seconds: 60,
+    max_requests: 10,
+    scope_by: "ip",
+  },
+  {
+    // إنشاءُ الطلبات والسلال: أضيقُ من التصفّح لأن كلَّ واحدٍ منها
+    // يكتب في القاعدة ويحجز مخزوناً.
+    name: "store_writes",
+    path_prefix: "/store",
+    methods: "POST,PUT,PATCH,DELETE",
+    window_seconds: 60,
+    max_requests: 60,
+    scope_by: "ip",
+  },
+  {
+    // التصفّحُ كريمٌ عمداً: زائرٌ يفتح عشر صفحاتٍ في دقيقةٍ سلوكٌ
+    // طبيعيّ، وحدٌّ ضيّقٌ هنا يخنق البيع لا الحاصد.
+    name: "store_reads",
+    path_prefix: "/store",
+    methods: "GET",
+    window_seconds: 60,
+    max_requests: 300,
+    scope_by: "ip",
+  },
+  {
+    // الإدارةُ بالهوية لا بالعنوان: فريقٌ كاملٌ خلف عنوانٍ واحدٍ في
+    // المكتب لا يجوز أن يتقاسم حدّاً واحداً.
+    name: "admin_all",
+    path_prefix: "/admin",
+    methods: "*",
+    window_seconds: 60,
+    max_requests: 600,
+    scope_by: "ip_actor",
+  },
+];
+
 export default async function seedAccess({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const access = container.resolve<AccessModuleService>(ACCESS_MODULE);
@@ -235,5 +295,20 @@ export default async function seedAccess({ container }: ExecArgs) {
   }
 
   logger.info(`الأدوار: ${roleBySlug.size} — ${[...roleBySlug.keys()].join(" · ")}`);
+
+  // ── سياساتُ تحديد المعدّل ────────────────────────────────────────
+  const existingPolicies = await access.listRateLimitPolicies(
+    {},
+    { select: ["id", "name"] }
+  );
+  const policyNames = new Set(existingPolicies.map((p: any) => p.name));
+  const missingPolicies = RATE_LIMITS.filter((p) => !policyNames.has(p.name));
+  if (missingPolicies.length) {
+    await access.createRateLimitPolicies(missingPolicies);
+  }
+  logger.info(
+    `سياساتُ الحدّ: ${policyNames.size + missingPolicies.length} (جديدة: ${missingPolicies.length})`
+  );
+
   logger.info("✅ بذرُ الصلاحيات تمّ.");
 }
