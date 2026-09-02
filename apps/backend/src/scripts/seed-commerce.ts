@@ -1,5 +1,6 @@
 import { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, Modules, ProductStatus } from "@medusajs/framework/utils";
+import { CATALOG_MODULE } from "../modules/catalog";
 import {
   createRegionsWorkflow,
   createSalesChannelsWorkflow,
@@ -47,15 +48,23 @@ const PRODUCTS = [
     title: "سمّاعة زادم اللاسلكية",
     description: "سمّاعةٌ لاسلكيةٌ بعزلٍ للضجيج — منتجُ فحصٍ لمسار الشراء.",
     variants: [
-      { title: "أسود", sku: "ZDM-HP-BLK", price: 39900 },
-      { title: "أبيض", sku: "ZDM-HP-WHT", price: 39900 },
+      { title: "أسود", sku: "ZDM-HP-BLK", price: 39900, en: "Black" },
+      { title: "أبيض", sku: "ZDM-HP-WHT", price: 39900, en: "White" },
     ],
+    en: {
+      title: "Zadim Wireless Headphones",
+      description: "Noise-cancelling wireless headphones — a fixture for the purchase path.",
+    },
   },
   {
     handle: "zadim-powerbank",
     title: "بطارية زادم المحمولة",
     description: "بطاريةٌ محمولة ١٠٠٠٠ مِلّي أمبير — منتجُ فحصٍ لمسار الشراء.",
-    variants: [{ title: "قياسي", sku: "ZDM-PB-STD", price: 12900 }],
+    variants: [{ title: "قياسي", sku: "ZDM-PB-STD", price: 12900, en: "Standard" }],
+    en: {
+      title: "Zadim Power Bank",
+      description: "A 10,000 mAh portable battery — a fixture for the purchase path.",
+    },
   },
 ];
 
@@ -323,6 +332,54 @@ export default async function seedCommerce({ container }: ExecArgs) {
     });
   }
 
+  // ── ٦ب) ترجمةُ ما يراه الزائرُ فعلاً (المرحلة ١١ب) ─────────────
+  //
+  // 🔴 وهنا لا في `seed-catalog` وحدَه: منتجاتُ الكتالوج **ليست في
+  // قناة البيع**، فلا تظهر في `/store/products` ولا يراها المتصفّح.
+  // وبوّابةُ الواجهة تفتح الصفحةَ الحقيقية — فإن لم تُترجَم هذه
+  // الاثنان بقيت `/en` عربيةً مهما امتلأ جدولُ الترجمة.
+  //
+  // وعناوينُهما عربيةٌ خالصة، فظهورُهما إنجليزيَّين لا يُفسَّر إلا
+  // بالإلباس.
+  const catalogSvc = container.resolve<any>(CATALOG_MODULE);
+  let translated = 0;
+  for (const p of PRODUCTS) {
+    const [product] = await productModule.listProducts(
+      { handle: p.handle },
+      { select: ["id", "handle"] }
+    );
+    if (!product) continue;
+
+    for (const [field, value] of Object.entries(p.en)) {
+      await catalogSvc.setTranslation({
+        entity_type: "product",
+        entity_id: product.id,
+        field,
+        locale: "en",
+        value,
+      });
+      translated++;
+    }
+
+    const variants = await productModule.listProductVariants(
+      { product_id: product.id },
+      { select: ["id", "title"] }
+    );
+    for (const v of variants as any[]) {
+      const en = p.variants.find((x) => x.title === v.title)?.en;
+      if (!en) continue;
+      await catalogSvc.setTranslation({
+        entity_type: "product_variant",
+        entity_id: v.id,
+        field: "title",
+        locale: "en",
+        value: en,
+      });
+      translated++;
+    }
+  }
+  logger.info(`الترجمات (en): ${translated}`);
+
   // ── ٧) المخزون: كلُّ مادةٍ في المستودعين ──────────────────────
   const { data: items } = await query.graph({
     entity: "inventory_item",
@@ -359,10 +416,37 @@ export default async function seedCommerce({ container }: ExecArgs) {
     { type: "rich_text", name_ar: "لماذا زادم", position: 30,
       payload: { title: "لماذا زادم", body: "شحنٌ من أقرب مستودع، ودفعٌ عند الاستلام، وفاتورةٌ إلكترونية." } },
   ];
+  const HOME_BLOCKS_EN: Record<string, Record<string, string>> = {
+    hero: {
+      "payload.title": "Zadim",
+      "payload.subtitle": "A Saudi store",
+      "payload.cta_label": "Shop now",
+    },
+    product_grid: { "payload.title": "Best sellers" },
+    rich_text: {
+      "payload.title": "Why Zadim",
+      "payload.body":
+        "Shipped from the nearest warehouse, cash on delivery, and an electronic invoice.",
+    },
+  };
+
   for (const b of HOME_BLOCKS) {
-    const [exists] = await cms.listPageBlocks({ page: "home", type: b.type });
-    if (exists) continue;
-    await cms.createPageBlocks([{ page: "home", is_active: true, ...b }]);
+    let [block] = await cms.listPageBlocks({ page: "home", type: b.type });
+    if (!block) {
+      [block] = await cms.createPageBlocks([{ page: "home", is_active: true, ...b }]);
+    }
+    // وترجمةُ الكتل تُكتب في كل تشغيلةٍ لا عند الإنشاء وحده: قاعدةٌ
+    // بُذرت قبل المرحلة ١١ب فيها الكتلُ ولا ترجمةَ لها، وشرطٌ على
+    // الإنشاء يتركها عربيةً إلى الأبد.
+    for (const [field, value] of Object.entries(HOME_BLOCKS_EN[b.type] ?? {})) {
+      await catalogSvc.setTranslation({
+        entity_type: "cms_block",
+        entity_id: (block as any).id,
+        field,
+        locale: "en",
+        value,
+      });
+    }
   }
 
   logger.info(

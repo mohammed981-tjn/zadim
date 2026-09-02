@@ -1,10 +1,11 @@
+import { type Locale } from "@/lib/i18n"
 import Image from "next/image"
 import Link from "next/link"
 import { Container } from "@/components/container"
 import { buttonVariants } from "@/components/ui/button"
 import type { HeroPayload } from "@/lib/medusa"
 
-export function HeroBlock({ payload }: { payload: HeroPayload }) {
+export function HeroBlock({ payload, locale }: { payload: HeroPayload; locale: Locale }) {
   if (!payload?.title) return null
 
   return (
@@ -33,7 +34,7 @@ export function HeroBlock({ payload }: { payload: HeroPayload }) {
           ) : null}
           {payload.cta_label && payload.cta_href ? (
             <Link
-              href={payload.cta_href}
+              href={`/${locale}${payload.cta_href}`}
               className={buttonVariants({
                 variant: "secondary",
                 className: "mt-2 h-12 px-8 text-base font-semibold",

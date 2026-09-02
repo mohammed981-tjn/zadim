@@ -3,6 +3,7 @@ import { ProductGridBlock } from "@/components/home/product-grid-block"
 import { BannerBlock } from "@/components/home/banner-block"
 import { CategoriesBlock } from "@/components/home/categories-block"
 import { RichTextBlock } from "@/components/home/rich-text-block"
+import type { Locale } from "@/lib/i18n"
 import type {
   HomeBlock,
   HeroPayload,
@@ -31,16 +32,16 @@ import type {
  * وكذلك كتلةٌ ناقصةُ الحمولة (`hero` بلا عنوان) — يبتلعها راسمُها ويبقى
  * غلافُها.
  */
-function inner(block: HomeBlock) {
+function inner(block: HomeBlock, locale: Locale) {
   switch (block.type) {
     case "hero":
-      return <HeroBlock payload={block.payload as HeroPayload} />
+      return <HeroBlock payload={block.payload as HeroPayload} locale={locale} />
     case "product_grid":
-      return <ProductGridBlock payload={block.payload as ProductGridPayload} />
+      return <ProductGridBlock payload={block.payload as ProductGridPayload} locale={locale} />
     case "banner":
-      return <BannerBlock payload={block.payload as BannerPayload} />
+      return <BannerBlock payload={block.payload as BannerPayload} locale={locale} />
     case "categories":
-      return <CategoriesBlock payload={block.payload as CategoriesPayload} />
+      return <CategoriesBlock payload={block.payload as CategoriesPayload} locale={locale} />
     case "rich_text":
       return <RichTextBlock payload={block.payload as RichTextPayload} />
     default:
@@ -48,6 +49,6 @@ function inner(block: HomeBlock) {
   }
 }
 
-export function BlockRenderer({ block }: { block: HomeBlock }) {
-  return <div data-block-type={block.type}>{inner(block)}</div>
+export function BlockRenderer({ block, locale }: { block: HomeBlock; locale: Locale }) {
+  return <div data-block-type={block.type}>{inner(block, locale)}</div>
 }

@@ -1,14 +1,15 @@
+import { type Locale } from "@/lib/i18n"
 import Image from "next/image"
 import Link from "next/link"
 import { Container } from "@/components/container"
 import { getCategoriesByIds, type CategoriesPayload } from "@/lib/medusa"
 
-export async function CategoriesBlock({ payload }: { payload: CategoriesPayload }) {
+export async function CategoriesBlock({ payload, locale }: { payload: CategoriesPayload; locale: Locale }) {
   if (!payload?.category_ids?.length) return null
 
   let categories
   try {
-    categories = await getCategoriesByIds(payload.category_ids)
+    categories = await getCategoriesByIds(payload.category_ids, locale)
   } catch {
     return null
   }
@@ -23,7 +24,7 @@ export async function CategoriesBlock({ payload }: { payload: CategoriesPayload 
           {categories.map((c) => (
             <Link
               key={c.id}
-              href={`/c/${c.handle}`}
+              href={`/${locale}/c/${c.handle}`}
               className="group relative flex aspect-[4/5] flex-col justify-end overflow-hidden rounded-2xl border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {c.thumbnail ? (

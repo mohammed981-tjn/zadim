@@ -1,9 +1,10 @@
+import { type Locale } from "@/lib/i18n"
 import Image from "next/image"
 import Link from "next/link"
 import { Container } from "@/components/container"
 import type { BannerPayload } from "@/lib/medusa"
 
-export function BannerBlock({ payload }: { payload: BannerPayload }) {
+export function BannerBlock({ payload, locale }: { payload: BannerPayload; locale: Locale }) {
   if (!payload?.title) return null
 
   const inner = (
@@ -28,7 +29,7 @@ export function BannerBlock({ payload }: { payload: BannerPayload }) {
     <section className="py-6 sm:py-8">
       <Container>
         {payload.href ? (
-          <Link href={payload.href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl">
+          <Link href={`/${locale}${payload.href}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl">
             {inner}
           </Link>
         ) : (

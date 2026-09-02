@@ -29,13 +29,33 @@ export function toArabicDigits(input: string): string {
 }
 
 /**
- * Format integer halalas as an Arabic-Indic amount string WITHOUT the currency
- * symbol. Pure integer math — no float ever touches the value.
+ * 🔴 **الرقمُ يتبع اللغة** — وهذا ليس تجميلاً.
  *
- * formatHalalas(32545) -> "٣٬٢٥٤٫٤٥"
- * formatHalalas(500)   -> "٥٫٠٠"
+ * صفحةٌ إنجليزيةٌ سعرُها «٣٩٩٫٠٠ ر.س» ليست إنجليزية: الزائرُ الذي لا
+ * يقرأ العربيةَ **لا يعرف كم يدفع**. وهو أخطرُ موضعٍ يبقى فيه شيءٌ
+ * غيرَ مترجَم، لأن بقيةَ الصفحة تبدو سليمةً فيثق بها.
+ *
+ * وقد كان كلُّ ما هنا مبرمَجاً بالعربية، **وأمسكته بوّابةُ الواجهة**
+ * حين صارت تقرأ نصَّ الصفحة بلغتها.
+ *
+ * والفاصلةُ العشرية تختلف كذلك: `٫` (U+066B) عربيةً و`.` إنجليزيةً.
  */
-export function formatHalalas(halalas: number): string {
+export type MoneyLocale = "ar" | "en"
+
+/** الأرقامُ بلغتها: عربيةً-هنديةً في العربية، وكما هي في الإنجليزية. */
+export function digits(locale: MoneyLocale, input: string | number): string {
+  const s = String(input)
+  return locale === "ar" ? toArabicDigits(s) : s
+}
+
+/**
+ * Format integer halalas WITHOUT the currency label. Pure integer math — no
+ * float ever touches the value.
+ *
+ * formatHalalas(32545, "ar") -> "٣٢٥٫٤٥"
+ * formatHalalas(32545, "en") -> "325.45"
+ */
+export function formatHalalas(halalas: number, locale: MoneyLocale): string {
   const value = Math.trunc(halalas)
   const negative = value < 0
   const abs = Math.abs(value)
@@ -47,13 +67,24 @@ export function formatHalalas(halalas: number): string {
   const grouped = riyals.toLocaleString("en-US")
   const western = `${grouped}.${fraction}`
 
-  return `${negative ? "؜-" : ""}${toArabicDigits(western)}`
+  // `؜` (U+061C) قبل السالب في العربية وحدَها: بدونه يقفز سطرُ
+  // الخصم إلى الجهة الخطأ في نصٍّ من اليمين إلى اليسار.
+  const sign = negative ? (locale === "ar" ? "؜-" : "-") : ""
+  return `${sign}${digits(locale, western)}`
 }
 
-/** The Saudi Riyal label shown after the number. */
-export const SAR = "ر.س"
+/**
+ * اسمُ العملة.
+ *
+ * و«SAR» لا «SR» ولا «﷼»: الأوّلُ رمزُ ISO يعرفه كلُّ من تعامل مع
+ * تحويلٍ بنكيّ، والثاني اختصارٌ غيرُ قياسيّ، والثالثُ محرفٌ لا تعرضه
+ * كثيرٌ من الخطوط فيظهر مربّعاً فارغاً مكانَ العملة.
+ */
+export function sarLabel(locale: MoneyLocale): string {
+  return locale === "ar" ? "ر.س" : "SAR"
+}
 
-/** Full display string, e.g. "٣٬٢٥٤٫٤٥ ر.س". */
-export function formatMoney(halalas: number): string {
-  return `${formatHalalas(halalas)} ${SAR}`
+/** Full display string, e.g. "٣٢٥٫٤٥ ر.س" / "325.45 SAR". */
+export function formatMoney(halalas: number, locale: MoneyLocale): string {
+  return `${formatHalalas(halalas, locale)} ${sarLabel(locale)}`
 }

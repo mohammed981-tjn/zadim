@@ -5,27 +5,39 @@ import { CheckoutFlow } from "@/components/checkout/checkout-flow"
 import { ErrorState } from "@/components/states"
 import { loadCart } from "@/lib/cart-actions"
 import { getShippingOptions, type ShippingOption } from "@/lib/medusa"
+import { t, type Locale } from "@/lib/i18n"
 
-export const metadata: Metadata = {
-  title: "إتمام الطلب — زادم",
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: Locale }>
+}): Promise<Metadata> {
+  const { locale } = await params
+  return { title: `${t(locale, "checkout.title")} — ${t(locale, "site.name")}` }
 }
 
 export const dynamic = "force-dynamic"
 
-export default async function CheckoutPage() {
+export default async function CheckoutPage({
+  params,
+}: {
+  params: Promise<{ locale: Locale }>
+}) {
+  const { locale } = await params
+
   let cart
   try {
     cart = await loadCart()
   } catch {
     return (
       <Container className="py-16">
-        <ErrorState title="تعذّر تحميل السلة" description="حدّث الصفحة وحاول مرة أخرى." />
+        <ErrorState title={t(locale, "cart.loadFailed")} description={t(locale, "cart.retryHint")} />
       </Container>
     )
   }
 
   if (!cart || cart.items.length === 0) {
-    redirect("/cart")
+    redirect(`/${locale}/cart`)
   }
 
   // نوعٌ صريح: بلا هذا يستنتج TypeScript ‏`never[]` من `[]` ثم يشكو من
@@ -40,8 +52,8 @@ export default async function CheckoutPage() {
 
   return (
     <Container className="py-8 md:py-12">
-      <h1 className="mb-8 text-2xl font-bold md:text-3xl">إتمام الطلب</h1>
-      <CheckoutFlow cart={cart} shippingOptions={shippingOptions} />
+      <h1 className="mb-8 text-2xl font-bold md:text-3xl">{t(locale, "checkout.title")}</h1>
+      <CheckoutFlow cart={cart} shippingOptions={shippingOptions} locale={locale} />
     </Container>
   )
 }

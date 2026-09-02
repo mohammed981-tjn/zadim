@@ -10,6 +10,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { ACCESS_MODULE } from "../modules/access";
 import type AccessModuleService from "../modules/access/service";
 import { isExempt, readField, ruleFor } from "../modules/access/permission-map";
+import { overlayTranslations } from "../modules/catalog/overlay";
 
 /**
  * حارسُ الصلاحيات وسجلُّ التدقيق — طبقةٌ واحدة على كل `/admin`.
@@ -202,5 +203,15 @@ export default defineMiddlewares({
       bodyParser: false,
       middlewares: [upload.array("files")],
     },
+
+    // ── مُلبِسُ الترجمة (المرحلة ١١ب) ───────────────────────────────
+    //
+    // ⚠️ `"/store/*"` **عمداً** ومسارُ العرض يُحصر داخل الوسيط
+    // (`READ_PATHS` في `modules/catalog/overlay.ts`).
+    //
+    // 🔴 والسبب أن `matcher: "/store/products"` قِيس فلم يُطابِق شيئاً:
+    // لا نداءَ ولا خطأ. ومُطابقٌ صامتٌ لا يُطابِق يترك البوّابةَ
+    // خضراءَ والمتجرَ عربياً — فلا يُبنى الحصرُ عليه.
+    { matcher: "/store/*", methods: ["GET"], middlewares: [overlayTranslations] },
   ],
 });

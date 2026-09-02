@@ -1,7 +1,9 @@
+import { t, type Locale } from "@/lib/i18n"
 import { Price } from "@/components/price"
 import { cn } from "@/lib/utils"
 
 interface TotalsProps {
+  locale: Locale
   itemTotal: number
   shippingTotal: number
   taxTotal: number
@@ -30,25 +32,33 @@ interface TotalsProps {
  *
  * فالأصنافُ والشحنُ يُعرضان شاملَين، والضريبةُ سطرُ **«منه»**.
  */
-export function Totals({ itemTotal, shippingTotal, taxTotal, discountTotal = 0, total, className }: TotalsProps) {
+export function Totals({
+  locale,
+  itemTotal,
+  shippingTotal,
+  taxTotal,
+  discountTotal = 0,
+  total,
+  className,
+}: TotalsProps) {
   return (
     <dl className={cn("space-y-3 text-sm", className)}>
-      <Row label="الأصناف" value={<Price halalas={itemTotal} />} />
+      <Row label={t(locale, "totals.items")} value={<Price locale={locale} halalas={itemTotal} />} />
       {discountTotal > 0 ? (
-        <Row label="الخصم" value={<Price halalas={-discountTotal} className="text-success" />} />
+        <Row label={t(locale, "totals.discount")} value={<Price locale={locale} halalas={-discountTotal} className="text-success" />} />
       ) : null}
       <Row
-        label="الشحن"
-        value={shippingTotal > 0 ? <Price halalas={shippingTotal} /> : <span className="text-success">مجاني</span>}
+        label={t(locale, "totals.shipping")}
+        value={shippingTotal > 0 ? <Price locale={locale} halalas={shippingTotal} /> : <span className="text-success">{t(locale, "totals.free")}</span>}
       />
       <div className="flex items-center justify-between border-t border-border pt-3">
-        <dt className="text-base font-semibold">الإجمالي</dt>
+        <dt className="text-base font-semibold">{t(locale, "totals.grand")}</dt>
         <dd>
-          <Price halalas={total} className="text-lg font-bold" symbolClassName="text-sm" />
+          <Price locale={locale} halalas={total} className="text-lg font-bold" symbolClassName="text-sm" />
         </dd>
       </div>
       <p className="text-xs text-muted-foreground">
-        الأسعار شاملة ضريبة القيمة المضافة ١٥٪ — منها <Price halalas={taxTotal} className="text-xs" />
+        {t(locale, "totals.vatNote")} <Price locale={locale} halalas={taxTotal} className="text-xs" />
       </p>
     </dl>
   )

@@ -10,7 +10,7 @@ export function EmptyState({
   actionLabel,
 }: {
   title: string
-  description?: string
+  description: string
   actionHref?: string
   actionLabel?: string
 }) {
@@ -32,10 +32,13 @@ export function EmptyState({
 
 /** Honest error state — shown when a real fetch fails. Never an eternal spinner. */
 export function ErrorState({
-  title = "تعذّر تحميل المحتوى",
+  title,
   description,
 }: {
-  title?: string
+  title: string
+  /** اختياريّ — **ولا نصَّ افتراضيَّ هنا**: كان عربياً مكتوباً في
+   * المكوّن، فيظهر في صفحةٍ إنجليزية. والنصُّ يأتي من المُنادي الذي
+   * يعرف لغتَه. */
   description?: string
 }) {
   return (
@@ -46,9 +49,9 @@ export function ErrorState({
       <TriangleAlert className="size-10 text-destructive" aria-hidden="true" />
       <div className="space-y-1">
         <h2 className="text-lg font-semibold text-balance">{title}</h2>
-        <p className="text-sm text-muted-foreground text-pretty">
-          {description ?? "حدث خطأ أثناء الاتصال بالمتجر. يرجى المحاولة مرة أخرى بعد قليل."}
-        </p>
+        {description ? (
+          <p className="text-sm text-muted-foreground text-pretty">{description}</p>
+        ) : null}
       </div>
     </div>
   )

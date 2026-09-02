@@ -1,3 +1,4 @@
+import { t, type Locale } from "@/lib/i18n"
 import Image from "next/image"
 import Link from "next/link"
 import { Price } from "@/components/price"
@@ -9,13 +10,21 @@ function lowestPrice(p: Product): number | null {
   return prices.length ? Math.min(...prices) : null
 }
 
-export function ProductCard({ product, priority = false }: { product: Product; priority?: boolean }) {
+export function ProductCard({
+  product,
+  locale,
+  priority = false,
+}: {
+  product: Product
+  locale: Locale
+  priority?: boolean
+}) {
   const image = product.thumbnail || product.images?.[0]?.url
   const price = lowestPrice(product)
 
   return (
     <Link
-      href={`/p/${product.handle}`}
+      href={`/${locale}/p/${product.handle}`}
       className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
@@ -29,7 +38,7 @@ export function ProductCard({ product, priority = false }: { product: Product; p
             priority={priority}
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">لا توجد صورة</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t(locale, "product.noImage")}</div>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3 sm:p-4">
@@ -38,9 +47,9 @@ export function ProductCard({ product, priority = false }: { product: Product; p
         </h3>
         <div className="mt-auto">
           {price != null ? (
-            <Price halalas={price} className="text-base font-semibold sm:text-lg" />
+            <Price locale={locale} halalas={price} className="text-base font-semibold sm:text-lg" />
           ) : (
-            <span className="text-sm text-muted-foreground">السعر عند الطلب</span>
+            <span className="text-sm text-muted-foreground">{t(locale, "product.priceOnRequest")}</span>
           )}
         </div>
       </div>

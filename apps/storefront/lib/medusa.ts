@@ -8,6 +8,8 @@
  * All money fields returned by the API are INTEGER HALALAS.
  */
 
+import type { Locale } from "@/lib/i18n"
+
 const BASE_URL = process.env.NEXT_PUBLIC_MEDUSA_URL
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_MEDUSA_PK
 
@@ -219,8 +221,11 @@ export interface RichTextPayload {
  * والمصدرُ واحدٌ للترتيب: القاعدة. (وبوّابةُ `verify-ui.mjs` تقابل
  * المرسومَ بالقادم كتلةً كتلة.)
  */
-export async function getHome(): Promise<{ blocks: HomeBlock[] }> {
-  const data = await medusaFetch<{ blocks: HomeBlock[] }>("/store/home", { revalidate: 60 })
+export async function getHome(locale: Locale): Promise<{ blocks: HomeBlock[] }> {
+  const suffix = locale === "ar" ? "" : `?locale=${encodeURIComponent(locale)}`
+  const data = await medusaFetch<{ blocks: HomeBlock[] }>(`/store/home${suffix}`, {
+    revalidate: 60,
+  })
   return { blocks: Array.isArray(data?.blocks) ? data.blocks : [] }
 }
 
@@ -300,40 +305,57 @@ function toProduct(raw: any): Product {
   }
 }
 
-async function fetchProducts(query: string, revalidate: number): Promise<any[]> {
+/**
+ * 🔴 **لاحقةُ اللغة — واللغةُ الأصلُ لا تُرسَل.**
+ *
+ * المحتوى في القاعدة عربيٌّ، والإنجليزيةُ **إلباسٌ فوقه** يقوم به
+ * وسيطٌ في الخلفية (`modules/catalog/overlay.ts`). فإرسالُ `locale=ar`
+ * يعني استعلامَ جدولِ ترجمةٍ في **كل طلبٍ عربيّ** لنتيجةٍ فارغةٍ
+ * دائماً — وجمهورُنا سعوديّ، أي الأغلبيةُ العظمى من الطلبات.
+ *
+ * وحذفُها ليس تحسيناً بل تعريفٌ: «بلا لغةٍ» تعني «كما هو في القاعدة».
+ */
+function localeQuery(locale: Locale): string {
+  return locale === "ar" ? "" : `&locale=${encodeURIComponent(locale)}`
+}
+
+async function fetchProducts(query: string, revalidate: number, locale: Locale): Promise<any[]> {
   const region = await defaultRegionId()
-  const qs = `${query}&fields=${encodeURIComponent(PRODUCT_FIELDS)}${region ? `&region_id=${region}` : ""}`
+  const qs = `${query}&fields=${encodeURIComponent(PRODUCT_FIELDS)}${region ? `&region_id=${region}` : ""}${localeQuery(locale)}`
   const data = await medusaFetch<{ products: any[] }>(`/store/products?${qs}`, { revalidate })
   return data?.products ?? []
 }
 
-export async function getProductByHandle(handle: string): Promise<Product | null> {
-  const products = await fetchProducts(`handle=${encodeURIComponent(handle)}&limit=1`, 60)
+export async function getProductByHandle(handle: string, locale: Locale): Promise<Product | null> {
+  const products = await fetchProducts(`handle=${encodeURIComponent(handle)}&limit=1`, 60, locale)
   return products[0] ? toProduct(products[0]) : null
 }
 
-export async function getProductsByHandles(handles: string[]): Promise<Product[]> {
+export async function getProductsByHandles(handles: string[], locale: Locale): Promise<Product[]> {
   if (!handles?.length) return []
   const qs = handles.map((h) => `handle[]=${encodeURIComponent(h)}`).join("&")
-  const products = await fetchProducts(`${qs}&limit=${handles.length}`, 60)
+  const products = await fetchProducts(`${qs}&limit=${handles.length}`, 60, locale)
   // Preserve the handle order the block author chose.
   const byHandle = new Map(products.map((p) => [p.handle, toProduct(p)]))
   return handles.map((h) => byHandle.get(h)).filter((p): p is Product => Boolean(p))
 }
 
-export async function getCategoryByHandle(handle: string): Promise<ProductCategory | null> {
+export async function getCategoryByHandle(
+  handle: string,
+  locale: Locale,
+): Promise<ProductCategory | null> {
   const data = await medusaFetch<{ product_categories: ProductCategory[] }>(
-    `/store/product-categories?handle=${encodeURIComponent(handle)}&limit=1`,
+    `/store/product-categories?handle=${encodeURIComponent(handle)}&limit=1${localeQuery(locale)}`,
     { revalidate: 60 },
   )
   return data?.product_categories?.[0] ?? null
 }
 
-export async function getCategoriesByIds(ids: string[]): Promise<ProductCategory[]> {
+export async function getCategoriesByIds(ids: string[], locale: Locale): Promise<ProductCategory[]> {
   if (!ids?.length) return []
   const qs = ids.map((id) => `id[]=${encodeURIComponent(id)}`).join("&")
   const data = await medusaFetch<{ product_categories: ProductCategory[] }>(
-    `/store/product-categories?${qs}&limit=${ids.length}`,
+    `/store/product-categories?${qs}&limit=${ids.length}${localeQuery(locale)}`,
     { revalidate: 60 },
   )
   const cats = data?.product_categories ?? []
@@ -361,13 +383,17 @@ export interface CategoryProductsResult {
  *
  * والمسارُ الناقص مسجَّلٌ في `dev-docs`/الخطوات المعلّقة للمرحلة ١٠.
  */
-export async function getCategoryProducts(handle: string): Promise<CategoryProductsResult> {
-  const category = await getCategoryByHandle(handle)
+export async function getCategoryProducts(
+  handle: string,
+  locale: Locale,
+): Promise<CategoryProductsResult> {
+  const category = await getCategoryByHandle(handle, locale)
   if (!category) return { category: null, products: [], count: 0 }
 
   const products = await fetchProducts(
     `category_id[]=${encodeURIComponent(category.id)}&limit=48`,
     30,
+    locale,
   )
 
   return { category, products: products.map(toProduct), count: products.length }
@@ -377,13 +403,22 @@ export async function getCategoryProducts(handle: string): Promise<CategoryProdu
 /* Search                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * ⚠️ **واللغةُ تُلبَس على النتائج لا على المطابقة.**
+ *
+ * المطابقةُ تجري على النصّ العربيّ المفهرَس مهما كانت لغةُ الصفحة —
+ * فزائرٌ إنجليزيٌّ يكتب `iPhone` يجده بالمرادفات (ADR-006)، ثم يُعرض
+ * العنوانُ مترجَماً. والعكسُ — فهرسةُ الإنجليزيةِ وحدَها في `/en` —
+ * يجعل نصفَ الكتالوج غيرَ قابلٍ للبحث لأن أكثرَه بلا ترجمة.
+ */
 export async function search(
   q: string,
+  locale: Locale,
 ): Promise<{ products: { id: string; title: string; handle: string }[]; count: number }> {
   if (!q.trim()) return { products: [], count: 0 }
   // Send the raw query; the backend handles Arabic normalization.
   const data = await medusaFetch<{ products: { id: string; title: string; handle: string }[]; count: number }>(
-    `/store/search?q=${encodeURIComponent(q)}`,
+    `/store/search?q=${encodeURIComponent(q)}${localeQuery(locale)}`,
     { revalidate: 0, cache: "no-store" },
   )
   return { products: data?.products ?? [], count: data?.count ?? 0 }
