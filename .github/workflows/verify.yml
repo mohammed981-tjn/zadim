@@ -202,6 +202,15 @@ jobs:
       JWT_SECRET: ci-only-not-a-secret
       COOKIE_SECRET: ci-only-not-a-secret
       NODE_OPTIONS: --max-old-space-size=4096
+      # 🔴 لازمٌ لأن هذه الوظيفة تُقلع الخلفيّة بـ`medusa start` — وهو
+      # **يعمل في وضع الإنتاج**. وحارسُ `MEDUSA_BACKEND_URL` يمنع
+      # الإقلاعَ بلا عنوانٍ صريح (وإلا كُتبت روابطُ صورٍ بـlocalhost
+      # في القاعدة)، فكان الخادمُ يموت ويسقط الفحصُ بـ«Timed out
+      # waiting for /health» — رسالةٌ تشير إلى المهلة لا إلى سببها.
+      #
+      # والقيمةُ صحيحةٌ هنا فعلاً لا التفافاً: الخلفيّةُ والواجهةُ على
+      # نفس الآلة في هذه الوظيفة.
+      MEDUSA_BACKEND_URL: http://localhost:9000
 
     steps:
       - uses: actions/checkout@v4

@@ -17,7 +17,6 @@ set -e
 # has been selected to create in» — رسالةٌ تبدو عطلَ إعدادٍ في الكود
 # وهي غيابُ سطرٍ واحد. (سقطت عليها أوّلُ تشغيلةِ CI، فصار السطرُ
 # مكتوباً في الورشة — وهنا للسبب نفسِه.)
-SCHEMA="${DATABASE_SCHEMA:-zadim}"
 node -e '
 const { Client } = require("pg");
 const schema = process.env.DATABASE_SCHEMA || "zadim";
