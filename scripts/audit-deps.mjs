@@ -24,7 +24,7 @@
  * تكتبه، ويُراجَع في الدفعة كأيّ سطرٍ آخر.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -146,7 +146,35 @@ if (control.length) {
 }
 console.log(`  ✅ الشاهد الموجب: خمسُ حالاتٍ معروفةُ الجواب مرّت`);
 
-const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, "utf8")) : {};
+/**
+ * خطُّ الأساس — يُقرأ مباشرةً، ولا يُسأل عن وجوده أوّلاً.
+ *
+ * ── ولماذا لا `existsSync` ثم `readFileSync` ────────────────────
+ *
+ * لأن بينهما فجوةً: الملفُّ قد يُحذف أو يُستبدل بعد السؤال وقبل
+ * القراءة (CWE-367). وهو ما أمسكه **CodeQL في أوّل تشغيلةٍ له على هذا
+ * المستودع** — وفي الدفعة التي ركّبته نفسِها.
+ *
+ * ولا يُدفع هنا ثمنٌ للتخلّص منه: `readFileSync` تخبرنا بالغياب
+ * بـ`ENOENT` — سؤالٌ واحدٌ بدل سؤالين، وبلا فجوةٍ بينهما.
+ *
+ * وفائدةٌ ثانية أهمُّ: الشرطيّةُ القديمة كانت تخلط **الغيابَ بالفساد**.
+ * وخطُّ أساسٍ فاسدُ الصياغة كان سيسقط برسالةٍ لا تقول ما بها، بينما
+ * غيابُه حالٌ مشروعةٌ (أوّلُ تشغيلة). فصارا حالين لكلٍّ رسالتُه.
+ */
+function readBaseline() {
+  try {
+    return JSON.parse(readFileSync(BASELINE, "utf8"));
+  } catch (e) {
+    if (e.code === "ENOENT") return {};
+    throw new Error(
+      `خطُّ الأساس موجودٌ وغيرُ صالح (${BASELINE}): ${e.message}\n` +
+        `أعِد توليدَه: node scripts/audit-deps.mjs --update`
+    );
+  }
+}
+
+const baseline = readBaseline();
 const update = process.argv.includes("--update");
 const fresh = {};
 let failed = 0;
