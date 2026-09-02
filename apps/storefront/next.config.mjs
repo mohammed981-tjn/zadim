@@ -16,10 +16,29 @@
  * (المرحلة ١٦)، ولا تسقط صورةٌ لأن نطاقَها لم يُدرَج في ملفّ.
  */
 
+import { dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
     unoptimized: true,
+  },
+
+  /**
+   * ⚠️ **جذرُ مساحة العمل يُصرَّح به، ولا يُستنتج.**
+   *
+   * في المستودع قفلان: `apps/storefront/package-lock.json` وقفلٌ في
+   * الجذر (أُضيف في المرحلة ٩ لأدوات فحص الواجهة — Playwright
+   * وLighthouse). فيرى Next قفلين ويحذّر أنه **خمّن** الجذر:
+   * «We detected multiple lockfiles».
+   *
+   * وهو تحذيرٌ لا خطأ — البناءُ ينجح. لكنّ الجذرَ يقرّر ما تتعقّبه
+   * حزمةُ الإخراج، وتخمينُه الخطأ يعني ملفّاتٍ ناقصةً في نشرةٍ بُنيت
+   * خضراء. فيُحسم صراحةً بمجلَّد هذا الملفّ.
+   */
+  turbopack: {
+    root: dirname(fileURLToPath(import.meta.url)),
   },
 }
 
