@@ -10,11 +10,17 @@ import { DEFAULT_LOCALE, LOCALES } from "@/lib/i18n"
  * لمحرّكات البحث، ورابطٌ يُشارَك لا يحمل لغةَ مُشارِكه. فلكلِّ لغةٍ
  * عنوانُها، ولا عنوانَ بلا لغة.
  *
+ * ── واسمُه `proxy` لا `middleware` ─────────────────────────────
+ *
+ * اصطلاحُ `middleware` مهجورٌ في Next 16 ويُحذّر منه البناءُ صراحةً.
+ * والتحذيرُ اليومَ خطأٌ غداً — واصطلاحٌ مهجورٌ في ملفٍّ يحرس **كلَّ**
+ * مسارٍ في المتجر ليس مكانَ المخاطرة.
+ *
  * ⚠️ **والافتراضُ العربية** لا لغةُ المتصفّح وحدَها: الجمهورُ سعوديّ،
  * ومتصفّحٌ إنجليزيُّ الإعدادِ في الرياض أمرٌ شائع. فتُقرأ رغبةُ الزائر
  * إن صرّح بها (`Accept-Language` يبدأ بـ`en`)، وإلا فالعربية.
  */
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   if (LOCALES.some((l) => pathname === `/${l}` || pathname.startsWith(`/${l}/`))) {

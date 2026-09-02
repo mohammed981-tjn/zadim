@@ -1,0 +1,14 @@
+# ما لا يدخل الصورة. ولا يقتصر أثرُه على الحجم:
+# `.env` هنا يعني **سرَّ الإنتاج مخبوزاً في طبقةٍ يقرؤها كلُّ من نالها**.
+.env
+.env.*
+!.env.example
+
+node_modules
+.medusa
+dist
+static
+
+.git
+.gitignore
+*.md
