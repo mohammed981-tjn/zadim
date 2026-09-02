@@ -1,5 +1,13 @@
 import { MedusaService } from "@medusajs/framework/utils";
-import { Permission, Role, RoleLimit, UserRole, AuditLog } from "./models";
+import {
+  Permission,
+  Role,
+  RoleLimit,
+  UserRole,
+  AuditLog,
+  RateLimitPolicy,
+  RateLimitCounter,
+} from "./models";
 
 export type AccessDecision =
   | { allowed: true }
@@ -39,6 +47,11 @@ class AccessModuleService extends MedusaService({
   RoleLimit,
   UserRole,
   AuditLog,
+  // تحديدُ المعدّل يسكن هنا لا في وحدةٍ جديدة: هو تحكّمُ وصولٍ
+  // بالتكرار كما أن الأدوارُ تحكّمُ وصولٍ بالهوية — وجمعُهما يُبقي
+  // سطحَ الأمن في مكانٍ واحدٍ يُقرأ مرّة.
+  RateLimitPolicy,
+  RateLimitCounter,
 }) {
   /**
    * هل يملك المستخدم هذه الصلاحية — وضمن حدّه؟

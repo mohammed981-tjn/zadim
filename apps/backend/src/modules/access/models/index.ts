@@ -5,3 +5,5 @@ export { Role } from "./role";
 export { RoleLimit } from "./role-limit";
 export { UserRole } from "./user-role";
 export { AuditLog } from "./audit-log";
+export { RateLimitPolicy } from "./rate-limit-policy";
+export { RateLimitCounter } from "./rate-limit-counter";
