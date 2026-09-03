@@ -6,8 +6,11 @@ import {
   checkoutCart,
   getShippingOptions,
   quoteCart,
+  setCartAddress,
   type CheckoutResult,
+  type NationalAddressForm,
   type Quote,
+  type SaveAddressResult,
   type ShippingOption,
 } from "@/lib/medusa"
 
@@ -21,6 +24,17 @@ async function requireCartId(): Promise<string> {
 }
 
 /** Real shipping options for the current cart. */
+/**
+ * يحفظ العنوانَ الوطنيَّ على السلّة.
+ *
+ * ⚠️ ويُنادى **قبل** خيارات الشحن لا بعدها: أجرةُ الشحن تُحسب للمنطقة
+ * والعنوان، وقائمةٌ تُجلب قبل أن يُعرف العنوانُ قد لا تكون قائمتَه.
+ */
+export async function saveAddress(form: NationalAddressForm): Promise<SaveAddressResult> {
+  const id = await requireCartId()
+  return setCartAddress(id, form)
+}
+
 export async function listShippingOptions(): Promise<ShippingOption[]> {
   const id = await requireCartId()
   return getShippingOptions(id)

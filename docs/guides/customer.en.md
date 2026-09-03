@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-01 — matches phase 11b (the bilingual store).
+> Last updated: 2026-09-03 — matches the national-address batch.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -89,6 +89,38 @@ total, with nothing extra.
 
 Three steps: **address**, then **shipping method**, then **review and
 pay**.
+
+### Your national address
+
+We ask for the full **Saudi National Address** as registered with Saudi
+Post — not a single address line:
+
+| Field | Example | Note |
+|---|---|---|
+| First and last name | Mohammed Alotaibi | |
+| Mobile number | 0555000111 | **How the courier reaches you** |
+| Building number | 2743 | Four digits |
+| Street name | King Fahd Road | |
+| District | Al Olaya | **Couriers rely on it more than the street** |
+| City | Riyadh | |
+| Postal code | 12211 | Five digits |
+| Additional number | 6889 | Four digits — pinpoints your entrance |
+| Short address | RRRD2929 | **Optional** |
+| Email | | **Optional** — for your order confirmation |
+
+You can find all of these in the **National Address** app or at
+[splonline.com.sa](https://splonline.com.sa).
+
+⚠️ **The screen will not move on to shipping until the store accepts
+your address.** If a field is missing or a number has the wrong length,
+the reason appears under that field — and every wrong field is marked at
+once, not one at a time.
+
+Arabic-Indic and Western digits are both accepted (`٢٧٤٣` and `2743` are
+the same), and your mobile number is accepted in any format you write it
+(`0555…` or `+966555…`).
+
+### Review
 
 The review step shows your final total, and you press **"Confirm
 order"**. Pressing it means you agree to pay the amount shown.

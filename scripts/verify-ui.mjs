@@ -163,6 +163,122 @@ const ctx = await browser.newContext({
   locale: "ar-SA",
 });
 
+
+// ════════════════════════════════════════════════════════════════
+// 🔴 شراءٌ كاملٌ من المتصفّح — البوّابةُ التي لم تكن
+// ════════════════════════════════════════════════════════════════
+//
+// ── لماذا أُضيفت ────────────────────────────────────────────────
+//
+// فحصٌ في 2026-09-03 وجد أن شاشةَ الإتمام كانت **تجمع العنوانَ وتتركه
+// في المتصفّح**: لا دالّةَ تُحدّث السلّة أصلاً. فكلُّ طلبٍ يُنشأ بلا
+// عنوانِ شحن — ولا أحدَ يعرف أين يُرسَل.
+//
+// ولم تكشفه بوّابةٌ واحدة، لسببٍ واحد: **لا بوّابةَ كانت تشتري**.
+// `verify-checkout.ts` يبني السلّةَ بسيرِ العمل ومعها العنوانُ فيفحص
+// الخادمَ لا الواجهة، وهذه البوّابةُ كانت تزور أربعَ صفحاتٍ ولا تفتح
+// `/checkout` قطّ.
+//
+// فالدرسُ أن **كلَّ ما لا يُسلك لا يُفحص**. وهذه تسلك الطريقَ كما
+// يسلكه العميل: منتجٌ ⇐ سلّة ⇐ عنوانٌ وطنيّ ⇐ شحنٌ ⇐ تسعيرٌ ⇐ تأكيد.
+//
+// ⚠️ **وتُشغَّل بالعربية وحدَها**: الشراءُ يقيس السلكَ لا الترجمة،
+// واللغتان مفحوصتان في كل صفحةٍ أعلاه. وشراءان يضاعفان زمنَ البوّابة
+// ولا يشتريان يقيناً جديداً.
+async function buyOnce(ctx) {
+  console.log("\n== 🛒 شراءٌ كاملٌ من المتصفّح (عربي) ==");
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e).slice(0, 140)));
+
+  try {
+    await page.goto(`${BASE}/ar/p/zadim-headphones`, { waitUntil: "networkidle", timeout: 45000 });
+
+    // «أضف إلى السلة» — بالدور لا بالمحدِّد: زرٌّ يُعاد تصميمُه لا
+    // يكسر البوّابة، وزرٌّ يختفي يكسرها. وهذا هو المطلوب.
+    await page.getByRole("button", { name: /أضف|السلة/ }).first().click({ timeout: 20000 });
+    await page.waitForTimeout(2000);
+
+    await page.goto(`${BASE}/ar/checkout`, { waitUntil: "networkidle", timeout: 45000 });
+
+    const fill = async (label, value) => {
+      await page.getByLabel(label, { exact: false }).first().fill(value, { timeout: 10000 });
+    };
+
+    await fill("الاسم الأول", "بوّابة");
+    await fill("اسم العائلة", "زادم");
+    await fill("رقم الجوال", "0555000111");
+    await fill("رقم المبنى", "2743");
+    await fill("اسم الشارع", "طريق الملك فهد");
+    await fill("الحي", "العليا");
+    await fill("المدينة", "الرياض");
+    await fill("الرمز البريدي", "12211");
+    await fill("الرقم الإضافي", "6889");
+
+    pass("حقولُ العنوان الوطنيّ التسعة موجودةٌ وتُملأ");
+
+    await page.getByRole("button", { name: /متابعة إلى الشحن/ }).click({ timeout: 20000 });
+
+    const review = page.getByRole("button", { name: /مراجعة الطلب/ });
+    await review.waitFor({ timeout: 25000 });
+    pass("الشاشةُ انتقلت إلى الشحن");
+
+    // 🔴 والشرطُ الحاسم **يُسأل عنه الخادمُ لا الشاشة**.
+    //
+    // انتقالُ الخطوة لا يُثبت شيئاً: الشاشةُ القديمة كانت تنتقل
+    // `onClick={() => setStep("shipping")}` بلا نداءٍ أصلاً، فتبدو
+    // عاملةً والسلّةُ بلا عنوان. فيُقرأ معرّفُ السلّة من الكعكة، وتُسأل
+    // الخلفيّةُ: **هل عندها العنوانُ الوطنيُّ مهيكلاً؟**
+    const cartCookie = (await ctx.cookies()).find((c) => c.name === "zadim_cart_id");
+    if (!cartCookie?.value) {
+      fail("لا كعكةَ سلّة — تعذّر التحقّق من العنوان على الخادم");
+    } else {
+      const api = process.env.MEDUSA_URL ?? "http://localhost:9000";
+      const pk = process.env.MEDUSA_PK ?? process.env.NEXT_PUBLIC_MEDUSA_PK ?? "";
+      // ⚠️ `fields=+shipping_address.metadata` لازم: مسارُ المتجر
+      // **لا يُعيد `metadata` العنوان افتراضاً** (قِيس — والحقلُ مخزَّنٌ
+      // في القاعدة كاملاً). وفاحصٌ يسأل عمّا لا يُعاد يسقط على نظامٍ
+      // سليم، وهو أسوأُ من فاحصٍ لا يسأل.
+      const r = await fetch(
+        `${api}/store/carts/${cartCookie.value}?fields=%2Bshipping_address.metadata`,
+        { headers: { "x-publishable-api-key": pk } }
+      );
+      const body = await r.json().catch(() => ({}));
+      const sa = body?.cart?.shipping_address ?? {};
+      const national = sa?.metadata?.national_address;
+      national?.district === "العليا" &&
+      national?.additional_number === "6889" &&
+      sa?.address_1 === "2743 طريق الملك فهد"
+        ? pass("والخادمُ يحمل العنوانَ مهيكلاً (الحيُّ والرقمُ الإضافيّ) ومركَّباً في الملصق")
+        : fail(
+            "الشاشةُ انتقلت والسلّةُ بلا عنوانٍ وطنيٍّ على الخادم — " +
+              "وهذا بعينه العطبُ الذي وُجد في 2026-09-03."
+          );
+    }
+
+    await review.click({ timeout: 20000 });
+
+    const confirm = page.getByRole("button", { name: /تأكيد الطلب/ });
+    await confirm.waitFor({ timeout: 30000 });
+    pass("التسعيرُ تمّ وظهرت شاشةُ التأكيد");
+
+    await confirm.click({ timeout: 20000 });
+
+    // الوصولُ إلى صفحة التأكيد هو الدليل: العنوانُ الصحيح وحدَه يعبر
+    // حارسَ `ADDRESS_REQUIRED` في `orchestrate.ts`.
+    await page.waitForURL(/\/orders\/[^/]+\/confirmation/, { timeout: 60000 });
+    pass(`الطلبُ تمّ — ${new URL(page.url()).pathname}`);
+
+    errors.length === 0
+      ? pass("ولا خطأَ جافاسكربت في المسار كلِّه")
+      : fail(`أخطاءُ جافاسكربت أثناء الشراء: ${errors.join(" · ")}`);
+  } catch (e) {
+    fail(`سقط الشراءُ من المتصفّح: ${String(e.message).slice(0, 200)}`);
+  } finally {
+    await page.close();
+  }
+}
+
 try {
   for (const loc of LOCALES)
   for (const [rawPath, label] of PAGES) {
@@ -565,6 +681,8 @@ try {
         "للدرجة: أضِف `--lighthouse`."
     );
   }
+
+  await buyOnce(ctx);
 } finally {
   await browser.close();
 }

@@ -531,6 +531,71 @@ export async function addShippingMethod(cartId: string, optionId: string): Promi
   return data.cart
 }
 
+/* ------------------------------------------------------------------ */
+/* National address                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * العنوانُ الوطنيّ السعوديّ — ستّةُ حقولٍ إلزامية.
+ *
+ * 🔴 **وهذه الدالّةُ هي السلكُ الذي كان مقطوعاً**: كانت الشاشةُ تجمع
+ * العنوانَ وتتركه في المتصفّح، فيُنشأ الطلبُ بلا عنوانٍ ولا بريد —
+ * ولا أحدَ يعرف أين يُرسَل.
+ */
+export interface NationalAddressForm {
+  first_name: string
+  last_name: string
+  phone: string
+  building_number: string
+  street: string
+  district: string
+  city: string
+  postal_code: string
+  additional_number: string
+  short_address?: string
+  email?: string
+}
+
+/** خطأُ حقلٍ واحد كما يُعيده الخادم. */
+export interface AddressFieldError {
+  field: string
+  code: string
+  message_ar: string
+}
+
+export type SaveAddressResult =
+  | { ok: true }
+  | { ok: false; message: string; fields: AddressFieldError[] }
+
+export async function setCartAddress(
+  cartId: string,
+  form: NationalAddressForm,
+): Promise<SaveAddressResult> {
+  try {
+    await medusaFetch(`/store/carts/${cartId}/address`, {
+      method: "POST",
+      body: JSON.stringify(form),
+      cache: "no-store",
+    })
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof MedusaError && err.status === 400) {
+      return {
+        ok: false,
+        message: err.message,
+        // الخادمُ يُعيد **كلَّ** الأخطاء لا أوّلَها، فالنموذجُ يُعلّم
+        // حقولَه مرّةً واحدة.
+        fields: (err.details?.fields ?? []) as AddressFieldError[],
+      }
+    }
+    return {
+      ok: false,
+      message: err instanceof MedusaError ? err.message : "تعذّر حفظ العنوان.",
+      fields: [],
+    }
+  }
+}
+
 export async function quoteCart(cartId: string): Promise<Quote> {
   const data = await medusaFetch<{ quote: Quote }>(`/store/carts/${cartId}/quote`, {
     method: "POST",

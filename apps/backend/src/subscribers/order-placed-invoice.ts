@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { ZATCA_MODULE } from "../modules/zatca";
 import type ZatcaModuleService from "../modules/zatca/service";
 import type { IssueInput } from "../modules/zatca/service";
+import { readNationalAddress } from "../modules/checkout/national-address";
 
 /**
  * طلبٌ وقع ⇒ فاتورةٌ تُختم في السلسلة.
@@ -81,9 +82,11 @@ export default async function orderPlacedInvoiceHandler({
       "billing_address.first_name",
       "billing_address.last_name",
       "billing_address.city",
+      "billing_address.metadata",
       "shipping_address.first_name",
       "shipping_address.last_name",
       "shipping_address.city",
+      "shipping_address.metadata",
     ],
     filters: { id: data.id },
   });
@@ -98,6 +101,17 @@ export default async function orderPlacedInvoiceHandler({
   const buyerName = addr
     ? [addr.first_name, addr.last_name].filter(Boolean).join(" ").trim() || null
     : null;
+
+  // 🔴 العنوانُ **مهيكلاً** لا نصّاً مركَّباً.
+  //
+  // فاتورةُ ZATCA تطلب اسمَ الشارع ورقمَ المبنى والرقمَ الإضافيَّ والحيَّ
+  // **حقولاً منفصلة** (street name · building number · plot identification ·
+  // city subdivision). وسطرُ عنوانٍ واحدٌ يجعل استخراجَها يومَ الربط
+  // تخميناً على بياناتٍ لا تُعاد كتابتُها.
+  //
+  // وحمولةُ الفاتورة **لا تُعدَّل بعد الإصدار** (ADR-020) — فما لا يُخزَّن
+  // اليوم لا يُضاف غداً.
+  const national = readNationalAddress(addr);
 
   const lines: IssueInput["lines"] = ((order.items ?? []) as any[]).map((it) => {
     const subtotal = halalas(it.subtotal);
@@ -120,7 +134,10 @@ export default async function orderPlacedInvoiceHandler({
     currency_code: String(order.currency_code ?? "sar"),
     total: halalas(order.total),
     vat_total: halalas(order.tax_total),
-    buyer: buyerName || addr?.city ? { name: buyerName, address: addr ?? null } : null,
+    buyer:
+      buyerName || national
+        ? { name: buyerName, address: national ?? (addr ? { city: addr.city ?? null } : null) }
+        : null,
     lines,
   });
 

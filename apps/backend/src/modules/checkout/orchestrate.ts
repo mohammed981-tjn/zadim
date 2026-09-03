@@ -13,6 +13,7 @@ import { PAYMENTS_MODULE } from "../payments";
 import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
 import { cartLines, currentPrices, readCart } from "./cart-reader";
+import { readNationalAddress } from "./national-address";
 
 /**
  * ترتيبُ الإتمام السبعة — **خارجَ المسار عمداً**.
@@ -212,6 +213,35 @@ export async function runCheckout(
     return finish(err(400, "CART_EMPTY", "السلّةُ فارغة."), "CART_EMPTY");
   }
 
+  // ── ٠ب) العنوانُ الوطنيّ — **قبل كلّ شيءٍ يُكلّف** ─────────────
+  //
+  // 🔴 الحارسُ الذي كان غائباً، وغيابُه كان يُنتج **طلباتٍ لا تُشحن**.
+  //
+  // شاشةُ الإتمام كانت تجمع العنوانَ وتتركه في المتصفّح، فيُنشأ الطلبُ
+  // بلا عنوانٍ ولا بريد. ولم تكشفه بوّابةٌ واحدة: `verify-checkout.ts`
+  // يبني السلّةَ بالعنوان عبر سيرِ العمل فيفحص الخادمَ لا الواجهة،
+  // وبوّابةُ المتصفّح لا تزور `/checkout` أصلاً.
+  //
+  // ⚠️ **ولا يكفي أن يوجد عنوان**: `POST /store/carts/:id` مسارٌ عامٌّ
+  // من Medusa يقبل أيَّ عنوانٍ بلا حقولنا. فيُفحص **اكتمالُه** لا
+  // حضورُه — والقراءةُ من `metadata.national_address` لا من النصّ
+  // المركَّب، فالاتجاهُ واحدٌ ولا يُشتقّ المهيكلُ من الملصق.
+  //
+  // وموضعُه هنا لا مع بقيّة الحرّاس: هو أرخصُ فحصٍ في الترتيب (قراءةُ
+  // حقلٍ مقروءٍ أصلاً)، ورفضُه لا يحتاج تسعيراً ولا مخزوناً. ثم إن
+  // خطوةَ COD أدناه تقرأ منه المدينةَ والجوّال — فلا معنى لتشغيلها قبله.
+  const national = readNationalAddress(cart.shipping_address);
+  if (!national) {
+    return finish(
+      err(
+        400,
+        "ADDRESS_REQUIRED",
+        "أكملْ بيانات العنوان الوطنيّ قبل تأكيد الطلب — رقمُ المبنى والشارعُ والحيُّ والمدينةُ والرمزُ البريديُّ والرقمُ الإضافيّ."
+      ),
+      "ADDRESS_REQUIRED"
+    );
+  }
+
   // ── ١) الأسعارُ من المصدر ─────────────────────────────────────
   const prices = await currentPrices(scope, cart);
   const drift = checkout.drift(lines, prices);
@@ -279,8 +309,11 @@ export async function runCheckout(
   const payments = scope.resolve(PAYMENTS_MODULE) as PaymentsModuleService;
   const cod = await payments.codDecision({
     order_total: totals.total,
-    city: cart.shipping_address?.city ?? null,
-    phone: cart.shipping_address?.phone ?? null,
+    // من العنوان المهيكل لا من حقول Medusa: المدينةُ هناك مطبَّعةٌ
+    // مفحوصة، والجوّالُ موحَّدُ الصيغة (`05…`) — ومفتاحُ منع COD يُبنى
+    // منه، فصيغتان مختلفتان لرقمٍ واحد تعنيان عميلين في نظر القائمة.
+    city: national.city,
+    phone: national.phone,
     email: cart.email ?? null,
   });
 

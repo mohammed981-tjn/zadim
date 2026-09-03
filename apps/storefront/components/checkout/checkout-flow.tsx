@@ -8,7 +8,7 @@ import { Totals } from "@/components/totals"
 import { Price } from "@/components/price"
 import { PriceChangedPanel } from "@/components/checkout/price-changed-panel"
 import { OutOfStockPanel } from "@/components/checkout/out-of-stock-panel"
-import { listShippingOptions, requestQuote, selectShipping, confirmCheckout } from "@/lib/checkout-actions"
+import { listShippingOptions, requestQuote, saveAddress, selectShipping, confirmCheckout } from "@/lib/checkout-actions"
 import { t, type Locale } from "@/lib/i18n"
 import type {
   Cart,
@@ -46,14 +46,29 @@ export function CheckoutFlow({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * حقولُ العنوان الوطنيّ السعوديّ (`06-saudi-layer.md` §٣).
+   *
+   * وكانت ستّةَ حقولٍ غربيّةٍ (`address_1` وحدَه بلا رقمِ مبنىً ولا حيٍّ
+   * ولا رقمٍ إضافيّ) **تُجمع ولا تُرسَل**. والحيُّ أهمُّها للمندوب،
+   * والرقمُ الإضافيُّ لا مقابلَ له في أيّ نموذجٍ عالميّ.
+   */
   const [address, setAddress] = useState({
     first_name: "",
     last_name: "",
     phone: "",
-    address_1: "",
+    building_number: "",
+    street: "",
+    district: "",
     city: "",
     postal_code: "",
+    additional_number: "",
+    short_address: "",
+    email: "",
   })
+
+  /** أخطاءُ الحقول كما يُعيدها الخادم — الحكمُ له لا للواجهة. */
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const [shippingOptionId, setShippingOptionId] = useState<string>(shippingOptions[0]?.id ?? "")
 
@@ -88,17 +103,63 @@ export function CheckoutFlow({
    */
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey)
 
-  const addressValid = useMemo(
+  /**
+   * ⚠️ **تمكينُ الزرّ لا حكمُ صحّة.** الحكمُ عند الخادم
+   * (`national-address.ts`) — وهو الوحيدُ الذي يعرف أن رقمَ المبنى
+   * أربعةُ أرقامٍ والرمزَ البريديَّ خمسة. وتكرارُ القواعد هنا يعني
+   * قاعدتين تفترقان يوماً، وأشدُّهما تساهلاً هي التي تُصدَّق.
+   */
+  const addressFilled = useMemo(
     () =>
       Boolean(
         address.first_name.trim() &&
           address.last_name.trim() &&
           address.phone.trim() &&
-          address.address_1.trim() &&
-          address.city.trim(),
+          address.building_number.trim() &&
+          address.street.trim() &&
+          address.district.trim() &&
+          address.city.trim() &&
+          address.postal_code.trim() &&
+          address.additional_number.trim(),
       ),
     [address],
   )
+
+  /**
+   * يحفظ العنوانَ ثم ينتقل — **ولا ينتقل إن لم يُحفظ**.
+   *
+   * وكان الزرُّ `onClick={() => setStep("shipping")}` بلا نداءٍ أصلاً.
+   */
+  async function goToShipping() {
+    setPending(true)
+    setError(null)
+    setFieldErrors({})
+    try {
+      const res = await saveAddress({
+        first_name: address.first_name,
+        last_name: address.last_name,
+        phone: address.phone,
+        building_number: address.building_number,
+        street: address.street,
+        district: address.district,
+        city: address.city,
+        postal_code: address.postal_code,
+        additional_number: address.additional_number,
+        short_address: address.short_address || undefined,
+        email: address.email || undefined,
+      })
+      if (!res.ok) {
+        setError(res.message)
+        setFieldErrors(Object.fromEntries(res.fields.map((f) => [f.field, f.message_ar])))
+        return
+      }
+      setStep("shipping")
+    } catch {
+      setError(t(locale, "checkout.addressFailed"))
+    } finally {
+      setPending(false)
+    }
+  }
 
   async function goToReview() {
     setPending(true)
@@ -173,17 +234,24 @@ export function CheckoutFlow({
                 {t(locale, "checkout.addressHeading")}
               </h2>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={t(locale, "checkout.firstName")} value={address.first_name} onChange={(v) => setAddress((a) => ({ ...a, first_name: v }))} />
-                <Field label={t(locale, "checkout.lastName")} value={address.last_name} onChange={(v) => setAddress((a) => ({ ...a, last_name: v }))} />
-                <Field label={t(locale, "checkout.phone")} value={address.phone} onChange={(v) => setAddress((a) => ({ ...a, phone: v }))} inputMode="tel" />
-                <Field label={t(locale, "checkout.city")} value={address.city} onChange={(v) => setAddress((a) => ({ ...a, city: v }))} />
+                <Field label={t(locale, "checkout.firstName")} value={address.first_name} error={fieldErrors.first_name} onChange={(v) => setAddress((a) => ({ ...a, first_name: v }))} />
+                <Field label={t(locale, "checkout.lastName")} value={address.last_name} error={fieldErrors.last_name} onChange={(v) => setAddress((a) => ({ ...a, last_name: v }))} />
+                <Field label={t(locale, "checkout.phone")} value={address.phone} error={fieldErrors.phone} hint={t(locale, "checkout.phoneHint")} onChange={(v) => setAddress((a) => ({ ...a, phone: v }))} inputMode="tel" />
+                <Field label={t(locale, "checkout.email")} value={address.email} error={fieldErrors.email} hint={t(locale, "checkout.emailHint")} onChange={(v) => setAddress((a) => ({ ...a, email: v }))} inputMode="text" />
+
+                <Field label={t(locale, "checkout.buildingNumber")} value={address.building_number} error={fieldErrors.building_number} hint={t(locale, "checkout.fourDigits")} onChange={(v) => setAddress((a) => ({ ...a, building_number: v }))} inputMode="numeric" />
+                <Field label={t(locale, "checkout.street")} value={address.street} error={fieldErrors.street} onChange={(v) => setAddress((a) => ({ ...a, street: v }))} />
+                {/* الحيُّ أهمُّ حقلٍ للمندوب — ولذلك يسبق المدينة */}
+                <Field label={t(locale, "checkout.district")} value={address.district} error={fieldErrors.district} onChange={(v) => setAddress((a) => ({ ...a, district: v }))} />
+                <Field label={t(locale, "checkout.city")} value={address.city} error={fieldErrors.city} onChange={(v) => setAddress((a) => ({ ...a, city: v }))} />
+                <Field label={t(locale, "checkout.postalCode")} value={address.postal_code} error={fieldErrors.postal_code} hint={t(locale, "checkout.fiveDigits")} onChange={(v) => setAddress((a) => ({ ...a, postal_code: v }))} inputMode="numeric" />
+                <Field label={t(locale, "checkout.additionalNumber")} value={address.additional_number} error={fieldErrors.additional_number} hint={t(locale, "checkout.fourDigits")} onChange={(v) => setAddress((a) => ({ ...a, additional_number: v }))} inputMode="numeric" />
                 <div className="sm:col-span-2">
-                  <Field label={t(locale, "checkout.address")} value={address.address_1} onChange={(v) => setAddress((a) => ({ ...a, address_1: v }))} />
+                  <Field label={t(locale, "checkout.shortAddress")} value={address.short_address} error={fieldErrors.short_address} hint={t(locale, "checkout.shortAddressHint")} onChange={(v) => setAddress((a) => ({ ...a, short_address: v }))} />
                 </div>
-                <Field label={t(locale, "checkout.postalCode")} value={address.postal_code} onChange={(v) => setAddress((a) => ({ ...a, postal_code: v }))} inputMode="numeric" />
               </div>
-              <Button type="button" className="h-11 px-6" disabled={!addressValid} onClick={() => setStep("shipping")}>
-                {t(locale, "checkout.toShipping")}
+              <Button type="button" className="h-11 px-6" disabled={!addressFilled || pending} onClick={goToShipping}>
+                {pending ? t(locale, "checkout.savingAddress") : t(locale, "checkout.toShipping")}
               </Button>
             </section>
           ) : null}
@@ -361,11 +429,17 @@ function Field({
   value,
   onChange,
   inputMode,
+  hint,
+  error,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   inputMode?: "text" | "tel" | "numeric"
+  /** تلميحُ الصيغة — يُعرض دائماً، لا بعد الخطأ فقط. */
+  hint?: string
+  /** رسالةُ الخادم لهذا الحقل. */
+  error?: string
 }) {
   return (
     <label className="block">
@@ -375,8 +449,20 @@ function Field({
         inputMode={inputMode}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+        aria-invalid={error ? true : undefined}
+        className={`h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-1 ${
+          error
+            ? "border-destructive focus:border-destructive focus:ring-destructive"
+            : "border-border focus:border-primary focus:ring-primary"
+        }`}
       />
+      {/* الخطأُ يزيح التلميح: عرضُهما معاً يجعل القارئَ يقرأ الصيغةَ
+          الصحيحة ويظنّها الشكوى. */}
+      {error ? (
+        <span className="mt-1 block text-xs text-destructive">{error}</span>
+      ) : hint ? (
+        <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
+      ) : null}
     </label>
   )
 }
