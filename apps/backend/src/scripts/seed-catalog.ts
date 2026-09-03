@@ -1,5 +1,6 @@
 import { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { createSalesChannelsWorkflow } from "@medusajs/medusa/core-flows";
 import { CATALOG_MODULE } from "../modules/catalog";
 import type CatalogModuleService from "../modules/catalog/service";
 
@@ -194,7 +195,53 @@ export default async function seedCatalog({ container }: ExecArgs) {
       });
     }
   }
-  logger.info(`المنتجات: ${DEMO_PRODUCTS.length}`);
+
+  // ── 🔴 ربطُ المنتجات بقناة البيع ──────────────────────────────
+  //
+  // ── العطبُ الذي أُصلح هنا ──────────────────────────────────────
+  //
+  // هذه البذرةُ تُنشئ منتجاتِها بـ`productModule.createProducts`
+  // مباشرةً، لا بسير عمل Medusa كما تفعل `seed-commerce`. والفرقُ أن
+  // النداءَ المباشر **لا يربطها بقناة بيع**.
+  //
+  // و`‎/store/products` يصفّي بقناةِ مفتاح النشر. فمنتجاتٌ بلا قناةٍ
+  // **موجودةٌ ومنشورةٌ ولا يراها زائرٌ أبداً**: قِيس أن
+  // `‎?category_id[]=…` يُعيد صفراً، **فكلُّ صفحة تصنيفٍ في المتجر
+  // فارغة** وتقول «لا منتجات في هذا القسم» — وهي كذبة.
+  //
+  // ولم تمسكه بوّابةٌ لأن بوّابةَ الكتالوج تنادي الوحدةَ مباشرةً
+  // (فتراها)، وبوّابةَ المتجر تفحص منتجاتِ `seed-commerce` وحدَها
+  // (وهي مربوطة). فالفجوةُ كانت بين الاثنتين بالضبط.
+  //
+  // والقناةُ تُسمّى كما تسمّيها `seed-commerce` كي تلتقيا على واحدةٍ
+  // لا اثنتين — والبذرتان تعملان بأيّ ترتيب.
+  const salesChannelModule = container.resolve(Modules.SALES_CHANNEL);
+  let [channel] = await salesChannelModule.listSalesChannels({ name: "متجر زادم" });
+  if (!channel) {
+    const { result } = await createSalesChannelsWorkflow(container).run({
+      input: { salesChannelsData: [{ name: "متجر زادم", description: "القناة الأساسية" }] },
+    });
+    channel = (result as any)[0];
+  }
+
+  const link = container.resolve(ContainerRegistrationKeys.LINK);
+  let linked = 0;
+  for (const demo of DEMO_PRODUCTS) {
+    const product = prodByHandle.get(demo.handle) as any;
+    if (!product) continue;
+    try {
+      await link.create({
+        [Modules.PRODUCT]: { product_id: product.id },
+        [Modules.SALES_CHANNEL]: { sales_channel_id: (channel as any).id },
+      });
+      linked++;
+    } catch {
+      // الوصلةُ قائمةٌ من تشغيلةٍ سابقة — والبذرةُ متماثلةٌ عند
+      // الإعادة، فالتكرارُ ليس خطأً.
+    }
+  }
+
+  logger.info(`المنتجات: ${DEMO_PRODUCTS.length} (وُصل ${linked} بقناة البيع)`);
 
   // ── المرادفات ──────────────────────────────────────────────────
   for (const entry of SYNONYMS) await catalog.upsertSynonym(entry);

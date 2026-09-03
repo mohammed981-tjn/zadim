@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-03 — matches the address-book batch.
+> Last updated: 2026-09-03 — matches the attribute-filtering batch.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -47,10 +47,27 @@ Search behaves the same way in both languages: type Arabic on the
 English page and you'll still get results, with the product name shown
 translated.
 
-⚠️ **There is no filtering yet** (by colour or size) on category pages.
-Attributes are recorded on every product and you can see them on its
-page, but the filter controls haven't been added — and we'd rather not
-show a button that does nothing.
+### Filtering on category pages
+
+Every category page has a **Filters** panel beside the results, showing
+that category's own attributes: Electronics shows colour and storage,
+Clothing shows size — each with its own, not one list for everything.
+
+- Picking **two values of the same attribute** means "either": red and
+  blue shows both.
+- Picking **two different attributes** means "both": red and size L shows
+  only red items in size L.
+- The number beside each value is how many you'd get if you picked it —
+  and it stays honest after you choose, so you know where you're going
+  before you click.
+- **Clear all** brings the whole category back.
+
+Your choices are written into the page URL: copy it to a friend and they
+see what you saw, and the browser's back button behaves as you'd expect.
+
+⚠️ If nothing matches, the message says "No products match these filters"
+rather than "category empty" — the first means remove an option, the
+second means there's no stock.
 
 ---
 

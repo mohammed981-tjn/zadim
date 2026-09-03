@@ -185,6 +185,89 @@ const ctx = await browser.newContext({
 // ⚠️ **وتُشغَّل بالعربية وحدَها**: الشراءُ يقيس السلكَ لا الترجمة،
 // واللغتان مفحوصتان في كل صفحةٍ أعلاه. وشراءان يضاعفان زمنَ البوّابة
 // ولا يشتريان يقيناً جديداً.
+/**
+ * 🔴 التصفيةُ بالخصائص **من المتصفّح** (بند ٣).
+ *
+ * وبوّابةُ الكتالوج تفحص المنطقَ بنداءٍ مباشر — وهي خضراءُ حتى لو لم
+ * تُرسَم لوحةٌ على الشاشة أصلاً. وهذه تفحص ما لا تفحصه: أن اللوحَ
+ * **يُرسَم**، وأن الضغطةَ **تُغيّر العنوانَ والنتائج**.
+ *
+ * ⚠️ **وصفحةُ التصنيف نفسُها لم تكن تُفتح**: قِيس أن كلَّ معرّفٍ عربيٍّ
+ * يُعيد «القسم غير موجود» — لأن Next يسلّم المقطعَ مرمَّزاً ثم كنّا
+ * نرمّزه ثانية. ولم تمسكه بوّابةٌ لأن **لا بوّابةَ كانت تزور تصنيفاً**.
+ */
+async function filterChecks(ctx) {
+  console.log("\n== 🔎 التصفيةُ بالخصائص (من المتصفّح) ==");
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e).slice(0, 140)));
+
+  /** عدَدُ بطاقات المنتجات المرسومة في منطقة النتائج. */
+  const productCount = () =>
+    page.evaluate(() => {
+      const main = document.querySelector("main");
+      if (!main) return 0;
+      const hrefs = [...main.querySelectorAll('a[href*="/p/"]')].map((a) => a.getAttribute("href"));
+      return new Set(hrefs).size;
+    });
+
+  try {
+    const url = `${BASE}/ar/c/${encodeURIComponent("إلكترونيات")}`;
+    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+
+    const notFound = await page.getByText("القسم غير موجود").count();
+    notFound === 0
+      ? pass("صفحةُ تصنيفٍ بمعرّفٍ عربيٍّ تُفتح — والترميزُ المزدوج كان يُعيد «القسم غير موجود»")
+      : fail("صفحةُ التصنيف تُعيد «القسم غير موجود» — الترميزُ المزدوج عاد");
+
+    const before = await productCount();
+    before > 0
+      ? pass(`والتصنيفُ يعرض منتجاتِه (${before}) — وبلا وصلةِ قناةِ بيعٍ كانت صفراً`)
+      : fail("التصنيفُ فارغٌ — راجعْ ربطَ منتجات seed-catalog بقناة البيع");
+
+    // بالعنوان لا بالدور: `aside` قد يفقد دورَ `complementary` بحسب
+    // ما يحويه، والعنوانُ المربوط بـ`aria-labelledby` لا يتغيّر.
+    const panel = page.locator('aside[aria-labelledby="filters-heading"]');
+    (await panel.count()) > 0
+      ? pass("ولوحُ التصفية مرسومٌ على الشاشة")
+      : fail("لا لوحَ تصفيةٍ — الخصائصُ تُحسب ولا تُعرض");
+
+    // أوّلُ خانةٍ في اللوح — بالدور لا بالمحدِّد.
+    const boxes = panel.getByRole("checkbox");
+    const n = await boxes.count();
+    if (n === 0) {
+      fail("لوحُ التصفية بلا خانات");
+    } else {
+      await boxes.first().check({ timeout: 15000 });
+      await page.waitForTimeout(2500);
+
+      decodeURIComponent(page.url()).includes("attr[")
+        ? pass("والضغطةُ تكتب الاختيارَ في العنوان — فالتصفيةُ تُشارَك وتُحفظ ويعمل زرُّ الرجوع")
+        : fail(`الاختيارُ لم يصل العنوان: ${page.url()}`);
+
+      const after = await productCount();
+      after < before
+        ? pass(`والنتائجُ ضاقت فعلاً (${before} ⇐ ${after}) — لا زرٌّ يُضاء ولا يصفّي`)
+        : fail(`النتائجُ لم تتغيّر (${before} ⇐ ${after}) — وزرٌّ لا يفعل شيئاً أسوأُ من غيابه`);
+
+      // وشاهدٌ عكسيّ: «مسح الكل» يُعيد الجميع.
+      await page.getByRole("button", { name: /مسح الكل/ }).first().click({ timeout: 15000 });
+      await page.waitForTimeout(2500);
+      (await productCount()) === before
+        ? pass("و«مسح الكل» يُعيد التصنيفَ كاملاً — الطريقُ ذو اتجاهين")
+        : fail("«مسح الكل» لم يُعِد كلَّ المنتجات");
+    }
+
+    errors.length === 0
+      ? pass("ولا خطأَ جافاسكربت في المسار كلِّه")
+      : fail(`أخطاءُ جافاسكربت: ${errors.join(" · ")}`);
+  } catch (e) {
+    fail(`سقطت فحوصُ التصفية: ${String(e.message).slice(0, 200)}`);
+  } finally {
+    await page.close();
+  }
+}
+
 async function buyOnce(ctx) {
   console.log("\n== 🛒 شراءٌ كاملٌ من المتصفّح (عربي) ==");
   const page = await ctx.newPage();
@@ -890,6 +973,7 @@ try {
     );
   }
 
+  await filterChecks(ctx);
   await buyOnce(ctx);
   await accountChecks();
 } finally {

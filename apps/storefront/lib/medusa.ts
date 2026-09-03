@@ -327,7 +327,11 @@ async function fetchProducts(query: string, revalidate: number, locale: Locale):
 }
 
 export async function getProductByHandle(handle: string, locale: Locale): Promise<Product | null> {
-  const products = await fetchProducts(`handle=${encodeURIComponent(handle)}&limit=1`, 60, locale)
+  const products = await fetchProducts(
+    `handle=${encodeURIComponent(decodeHandle(handle))}&limit=1`,
+    60,
+    locale,
+  )
   return products[0] ? toProduct(products[0]) : null
 }
 
@@ -340,12 +344,37 @@ export async function getProductsByHandles(handles: string[], locale: Locale): P
   return handles.map((h) => byHandle.get(h)).filter((p): p is Product => Boolean(p))
 }
 
+/**
+ * 🔴 يفكّ ترميزَ مقطعِ مسارٍ **مرّةً واحدة** — وهذا إصلاحُ عطبٍ حيّ.
+ *
+ * ── ما كان يقع ──────────────────────────────────────────────────
+ *
+ * Next يسلّم `params.handle` **مرمَّزاً** (`%D8%A5…`)، ثم كنّا نمرّره
+ * إلى `encodeURIComponent` — فيصير `%25D8%25A5…`، وهو نصٌّ لا يطابق
+ * أيَّ سطرٍ في القاعدة.
+ *
+ * وأثرُه أن **كلَّ صفحة تصنيفٍ عربيّةٍ في المتجر تُعيد «القسم غير
+ * موجود»**. قِيس على الفرع قبل هذه الدفعة وبعدها: قبلَها 404 دائماً.
+ * ولم تمسكه بوّابةٌ لأن **لا بوّابةَ تزور صفحةَ تصنيف** — والمعرّفات
+ * الإنجليزية (`zadim-headphones`) تعمل فتُخفيه.
+ *
+ * والفكُّ محميٌّ بـ`try`: مقطعٌ يحمل `%` وحدَه ليس ترميزاً صالحاً،
+ * ويرمي `URIError`. فيُستعمل كما هو بدل أن تسقط الصفحة.
+ */
+export function decodeHandle(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 export async function getCategoryByHandle(
   handle: string,
   locale: Locale,
 ): Promise<ProductCategory | null> {
   const data = await medusaFetch<{ product_categories: ProductCategory[] }>(
-    `/store/product-categories?handle=${encodeURIComponent(handle)}&limit=1${localeQuery(locale)}`,
+    `/store/product-categories?handle=${encodeURIComponent(decodeHandle(handle))}&limit=1${localeQuery(locale)}`,
     { revalidate: 60 },
   )
   return data?.product_categories?.[0] ?? null
@@ -367,36 +396,83 @@ export interface CategoryProductsResult {
   category: ProductCategory | null
   products: Product[]
   count: number
+  filters: CategoryFilter[]
 }
 
+/** فلترٌ مولَّدٌ كما يُعيده الخادم. */
+export interface CategoryFilter {
+  attribute_code: string
+  name_ar: string
+  data_type: string
+  values: Array<{ value: string; count: number; selected: boolean }>
+}
+
+/** ما اختاره الزائر — رمزُ الخاصية ⇐ قيمةٌ أو أكثر. */
+export type FilterSelection = Record<string, string[]>
+
 /**
- * ⚠️ **ولا تصفيةَ بالخصائص بعد — وهذا مقصودٌ ومكتوب.**
+ * منتجاتُ تصنيفٍ — **مصفّاةً بالخصائص** (بند ٣).
  *
- * كانت هذه الدالةُ تمرّر كلَّ معاملٍ في العنوان إلى `/store/products`
- * «ليفسّره الخادم». وهو لا يفسّره: Medusa **يرفض** المعاملَ الذي لا
- * يعرفه، فأوّلُ نقرةٍ على لونٍ كانت تُعيد ٤٠٠ لا نتائجَ مصفّاة.
+ * ⚠️ **ولا يُمرَّر معاملٌ مجهولٌ إلى `/store/products`.** هذا ما كان
+ * يقع: كلُّ معاملٍ في العنوان يُمرَّر «ليفسّره الخادم»، وMedusa **يرفض**
+ * ما لا يعرفه — فأوّلُ نقرةٍ على لونٍ كانت تُعيد ٤٠٠ لا نتائجَ مصفّاة.
+ * فالتصفيةُ تقع في `‎/store/categories/:id/browse` الذي يفهم الخصائص،
+ * ثم تُجلب تفاصيلُ ما بقي **بمعرّفاته** من مسار المنتجات.
  *
- * والخصائصُ نفسُها موجودةٌ في الخلفية (`GET /store/categories/:id/filters`
- * يُعيدها بأعدادها)، **ولا مسارَ يصفّي المنتجاتِ بها**. فلا تُرسم أدواتُ
- * تصفيةٍ لا تصفّي: زرٌّ لا يفعل شيئاً أسوأُ من غيابه، لأن الزائرَ يظنّ
- * المتجرَ خالياً من مقاسه وهو موجود.
+ * ── ونداءان لا واحد، بترتيبٍ مقصود ──────────────────────────────
  *
- * والمسارُ الناقص مسجَّلٌ في `dev-docs`/الخطوات المعلّقة للمرحلة ١٠.
+ * الأوّلُ يقرّر **مَن يبقى** (خصائصُ ووحدتُنا)، والثاني يجلب **كيف
+ * يُعرض** (ترجمةٌ وسعرُ المنطقة — وهما عند Medusa لا عندنا). ودمجُهما
+ * يعني نقلَ منطق التسعير والترجمة إلى وحدتنا، وهو تكرارٌ يفترق يوماً.
  */
 export async function getCategoryProducts(
   handle: string,
   locale: Locale,
+  selection: FilterSelection = {},
 ): Promise<CategoryProductsResult> {
   const category = await getCategoryByHandle(handle, locale)
-  if (!category) return { category: null, products: [], count: 0 }
+  if (!category) return { category: null, products: [], count: 0, filters: [] }
 
-  const products = await fetchProducts(
-    `category_id[]=${encodeURIComponent(category.id)}&limit=48`,
-    30,
-    locale,
-  )
+  const qs = Object.entries(selection)
+    .flatMap(([code, values]) =>
+      values.map((v) => `attr[${encodeURIComponent(code)}]=${encodeURIComponent(v)}`),
+    )
+    .join("&")
 
-  return { category, products: products.map(toProduct), count: products.length }
+  let productIds: string[] = []
+  let filters: CategoryFilter[] = []
+  try {
+    const browsed = await medusaFetch<{ product_ids: string[]; filters: CategoryFilter[] }>(
+      `/store/categories/${encodeURIComponent(category.id)}/browse${qs ? `?${qs}` : ""}`,
+      { revalidate: 30 },
+    )
+    productIds = browsed.product_ids ?? []
+    filters = browsed.filters ?? []
+  } catch {
+    // 🔴 سقوطُ التصفية **لا يُفرغ التصنيف**: يُعرض كاملاً بلا فلاتر.
+    // وصفحةُ تصنيفٍ فارغةٌ تقول للزائر «لا بضاعةَ هنا» — وهي كذبةٌ
+    // سببُها عطلٌ عندنا لا نفادُ مخزون.
+    const all = await fetchProducts(
+      `category_id[]=${encodeURIComponent(category.id)}&limit=48`,
+      30,
+      locale,
+    )
+    return { category, products: all.map(toProduct), count: all.length, filters: [] }
+  }
+
+  if (!productIds.length) {
+    return { category, products: [], count: 0, filters }
+  }
+
+  const idQs = productIds.slice(0, 48).map((id) => `id[]=${encodeURIComponent(id)}`).join("&")
+  const products = await fetchProducts(`${idQs}&limit=48`, 30, locale)
+
+  // ترتيبُ الخادم يُحفظ: هو مرتَّبٌ بما يقرّره التصنيف، و`id[]` لا
+  // يضمن ترتيبَ ما يُعيد.
+  const byId = new Map(products.map((p: any) => [p.id, toProduct(p)]))
+  const ordered = productIds.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p))
+
+  return { category, products: ordered, count: ordered.length, filters }
 }
 
 /* ------------------------------------------------------------------ */
