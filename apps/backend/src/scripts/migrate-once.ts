@@ -89,6 +89,55 @@ async function main() {
   const client = new Client({ connectionString: url });
   await client.connect();
 
+  // ── 🔴 مسارُ البحث قبل الهجرة — وإلا تناثر المخطَّط بلا خطأ ──────
+  //
+  // `medusa db:migrate` **لا يضع كلَّ جداوله في `databaseSchema`**. جداولُ
+  // وحداتنا (٢٢) تحترمه، وهجراتُ Medusa الأساسية (١٦٧) تكتب SQL خاماً
+  // بأسماءٍ غيرِ مؤهَّلة — فتذهب حيث يقول `search_path`.
+  //
+  // وافتراضُ Postgres `"$user", public`. فالمخطَّطُ يصيب **فقط** حين يوافق
+  // اسمُ المخطَّط اسمَ الدور. وهو ما يقع في الورشة صدفةً (المستخدم `zadim`
+  // والمخطَّط `zadim`) — فتمرّ خضراءَ أبداً. ويقع خلافُه على أيّ قاعدةٍ
+  // دورُها `postgres` (وهو الافتراضُ في Railway وسوبابيس معاً).
+  //
+  // وقِيس على Postgres 16:
+  //
+  //   دورٌ `zadim` + مخطَّط `zadim`   ⇒ ١٩٠/١٩٠ في المخطَّط ✅
+  //   دورٌ `zadim` + مخطَّط `zadim2`  ⇒ ١٦٧ في `public` و٢٢ في المخطَّط ⛔
+  //   وبعد `alter role … set search_path` ⇒ ١٩٠/١٩٠ ✅
+  //
+  // والأسوأ أن التناثر **لا يبدو عطلَ مخطَّط**: الهجرةُ تمضي، ثم تسقط
+  // المُحمِّلاتُ بـ«relation does not exist» لجدولٍ موجودٍ في مخطَّطٍ آخر.
+  //
+  // ⚠️ وعلى قاعدةٍ مشتركة (ADR-009 سابقاً) يعني التناثرُ أن ١٦٧ جدولاً
+  // من جداولنا تُخلط بجداول جارِنا في `public` — وهو بالضبط ما كُتب
+  // المخطَّطُ المنفصل لمنعه.
+  //
+  // فيُفحص هنا **قبل** أيّ هجرة: `current_schema()` هو أوّلُ مخطَّطٍ
+  // موجودٍ في مسار البحث — أي حيث تنزل الجداولُ غيرُ المؤهَّلة فعلاً.
+  const { rows: sp } = await client.query(
+    "select current_schema() as effective, current_setting('search_path') as path"
+  );
+  const effective = sp?.[0]?.effective ?? null;
+
+  if (effective !== schema) {
+    const db = (await client.query("select current_database() as d")).rows[0].d;
+    const role = (await client.query("select current_user as u")).rows[0].u;
+    console.error(
+      `[zadim] ⛔ مسارُ البحث لا يبدأ بالمخطَّط المضبوط.\n` +
+        `        المضبوط: ${schema} · والفعليّ: ${effective} · المسار: ${sp?.[0]?.path}\n` +
+        `        ولو هاجرنا الآن لنزل ١٦٧ جدولاً من جداول Medusa في «${effective}»\n` +
+        `        و٢٢ فقط في «${schema}» — ثم يسقط الإقلاع برسالةٍ لا تدلّ على السبب.\n` +
+        `        شغّل مرّةً واحدةً على القاعدة:\n` +
+        `          alter role ${role} in database ${db} set search_path = ${schema}, public;\n` +
+        `        ثم أعِد النشر.`
+    );
+    await client.end();
+    process.exit(1);
+  }
+
+  console.log(`[zadim] مسارُ البحث سليم (${sp?.[0]?.path}).`);
+
   const key = lockKey(schema);
   console.log(`[zadim] انتظارُ قفل الهجرة (${schema})…`);
 

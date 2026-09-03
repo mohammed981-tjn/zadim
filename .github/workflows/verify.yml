@@ -79,8 +79,22 @@ jobs:
       # وجودَه. وقاعدةٌ جديدةٌ ليس فيها إلا `public`، فتسقط أوّلُ هجرةٍ
       # بـ«no schema has been selected to create in» — رسالةٌ تبدو عطلَ
       # إعدادٍ في الكود وهي غيابُ سطرٍ واحد. (سقطت أوّلُ تشغيلةٍ عليها.)
-      - name: إنشاء المخطَّط
-        run: psql "$DATABASE_URL" -c 'create schema if not exists zadim'
+      # 🔴 و`search_path` صراحةً — لا بالصدفة.
+      #
+      # `medusa db:migrate` يضع جداولَ وحداتنا (٢٢) في `databaseSchema`،
+      # وهجراتُ Medusa الأساسية (١٦٧) تكتب SQL خاماً بأسماءٍ غيرِ مؤهَّلة
+      # فتذهب حيث يقول `search_path` — وافتراضُه `"$user", public`.
+      #
+      # ومستخدمُ الورشة اسمُه `zadim` والمخطَّطُ `zadim`، فكان المسارُ
+      # يصيب **صدفةً**: `"$user"` يطابق المخطَّط. وقاعدةُ الإنتاج دورُها
+      # `postgres` (في Railway وسوبابيس معاً) — فتصيب الورشةُ ويتناثر
+      # الإنتاج، وهو أسوأُ أنواع الخضرة.
+      #
+      # فتُضبط هنا كما تُضبط في الإنتاج، وتُفحص في `migrate-once.ts`.
+      - name: إنشاء المخطَّط وضبطُ مسار البحث
+        run: |
+          psql "$DATABASE_URL" -c 'create schema if not exists zadim'
+          psql "$DATABASE_URL" -c 'alter role zadim in database zadim_test set search_path = zadim, public'
 
       # 🔴 **بنفس الطريق الذي تسلكه الحاوية** لا بـ`db:migrate` مباشرةً.
       #
@@ -301,8 +315,22 @@ jobs:
         working-directory: apps/backend
         run: npm ci
 
-      - name: إنشاء المخطَّط
-        run: psql "$DATABASE_URL" -c 'create schema if not exists zadim'
+      # 🔴 و`search_path` صراحةً — لا بالصدفة.
+      #
+      # `medusa db:migrate` يضع جداولَ وحداتنا (٢٢) في `databaseSchema`،
+      # وهجراتُ Medusa الأساسية (١٦٧) تكتب SQL خاماً بأسماءٍ غيرِ مؤهَّلة
+      # فتذهب حيث يقول `search_path` — وافتراضُه `"$user", public`.
+      #
+      # ومستخدمُ الورشة اسمُه `zadim` والمخطَّطُ `zadim`، فكان المسارُ
+      # يصيب **صدفةً**: `"$user"` يطابق المخطَّط. وقاعدةُ الإنتاج دورُها
+      # `postgres` (في Railway وسوبابيس معاً) — فتصيب الورشةُ ويتناثر
+      # الإنتاج، وهو أسوأُ أنواع الخضرة.
+      #
+      # فتُضبط هنا كما تُضبط في الإنتاج، وتُفحص في `migrate-once.ts`.
+      - name: إنشاء المخطَّط وضبطُ مسار البحث
+        run: |
+          psql "$DATABASE_URL" -c 'create schema if not exists zadim'
+          psql "$DATABASE_URL" -c 'alter role zadim in database zadim_test set search_path = zadim, public'
 
       - name: هجراتُ الخلفيّة وبذورُها
         working-directory: apps/backend
