@@ -4,6 +4,8 @@ import { ORDERS_MODULE } from "../modules/orders";
 import type OrdersModuleService from "../modules/orders/service";
 import { MARKETING_MODULE } from "../modules/marketing";
 import type MarketingModuleService from "../modules/marketing/service";
+import { WISHLIST_MODULE } from "../modules/wishlist";
+import type WishlistModuleService from "../modules/wishlist/service";
 
 /**
  * تصريفُ صندوق الأحداث إلى رسائل — **الطرفُ الذي كان ناقصاً**.
@@ -39,6 +41,70 @@ import type MarketingModuleService from "../modules/marketing/service";
 /** كم حدثاً في الدورة الواحدة. */
 const BATCH = 100;
 
+/**
+ * 🔴 **من ينتظر رخصَ هذا السعر** — الطرفُ الذي أتمّ بند ٢٢.
+ *
+ * ── ما كان يقع ──────────────────────────────────────────────────
+ *
+ * حمولةُ `PriceDropped` تحمل `price_id` و`price_set_id` **ولا تحمل
+ * مستقبِلاً**: المُطلِقُ في القاعدة لا يعرف من يهتمّ. فكان `dispatch`
+ * يُنادى بـ`recipient = null` **فيُخطِّط صفرَ رسالة** — الحدثُ يُكتب
+ * منذ المرحلة ١١، ويُقرأ، ويُوسَم مُسلَّماً، **ولا يصل أحداً**.
+ *
+ * وهو عطبٌ لا يشكو منه شيء: الصندوقُ يُفرَغ والعدّاداتُ خضراء.
+ *
+ * ── والسلسلةُ التي تُبنى هنا ────────────────────────────────────
+ *
+ * `price` ⇐ `price_set` ⇐ `product_variant_price_set` ⇐ `variant`
+ * ⇐ `product` ⇐ **صفوفُ المفضّلة** ⇐ بريدُ كلّ عميلٍ منها.
+ *
+ * ⚠️ **ويُفرَّق بين متغيّرٍ ومتغيّر**: من وضع المقاسَ L في مفضّلته لا
+ * يريد خبراً عن رخص المقاس XS. و`variant_id = null` في الصفّ تعني
+ * «المنتجَ كلَّه» فيُنبَّه لأيّها.
+ */
+async function priceDropRecipients(
+  container: MedusaContainer,
+  payload: Record<string, unknown>
+): Promise<Array<{ email: string | null; phone: string | null; locale: string }>> {
+  const priceSetId = payload.price_set_id ? String(payload.price_set_id) : "";
+  if (!priceSetId) return [];
+
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
+  const wishlist = container.resolve(WISHLIST_MODULE) as WishlistModuleService;
+
+  // مجموعةُ الأسعار ⇐ المتغيّر ⇐ المنتج.
+  const { data: variants } = await query.graph({
+    entity: "product_variant",
+    fields: ["id", "product_id"],
+    filters: { price_set: { id: priceSetId } },
+  });
+
+  const pairs = (variants as any[])
+    .map((v) => ({ variant_id: v.id as string, product_id: v.product_id as string }))
+    .filter((p) => p.product_id);
+  if (!pairs.length) return [];
+
+  const customerIds = new Set<string>();
+  for (const pair of pairs) {
+    const watchers = await wishlist.watchersOf(pair.product_id, pair.variant_id);
+    for (const w of watchers as any[]) customerIds.add(w.customer_id);
+  }
+  if (!customerIds.size) return [];
+
+  // بريدُ العملاء **الآن** لا من الحمولة: الحمولةُ حدثُ سعرٍ لا حدثُ
+  // عميل، ولا بريدَ فيها أصلاً. وهذا الاستثناءُ الوحيدُ من قاعدة
+  // «المستقبِلُ من الحمولة» — ومقصودٌ: المشترِكُ قد يكون اشترك اليوم.
+  const { data: customers } = await query.graph({
+    entity: "customer",
+    fields: ["id", "email", "phone"],
+    filters: { id: [...customerIds] },
+  });
+
+  return (customers as any[])
+    .filter((c) => c.email || c.phone)
+    .map((c) => ({ email: c.email ?? null, phone: c.phone ?? null, locale: "ar" }));
+}
+
 export default async function dispatchMarketing(container: MedusaContainer) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const orders = container.resolve(ORDERS_MODULE) as OrdersModuleService;
@@ -64,21 +130,32 @@ export default async function dispatchMarketing(container: MedusaContainer) {
     };
 
     try {
-      const out = await marketing.dispatch(
-        {
-          id: row.id,
-          event: row.event,
-          aggregate_type: row.aggregate_type,
-          aggregate_id: row.aggregate_id,
-          payload: row.payload ?? null,
-          occurred_at: new Date(row.occurred_at),
-          attempts: Number(row.attempts) || 0,
-        },
-        recipient.email || recipient.phone ? recipient : null
-      );
+      const due = {
+        id: row.id,
+        event: row.event,
+        aggregate_type: row.aggregate_type,
+        aggregate_id: row.aggregate_id,
+        payload: row.payload ?? null,
+        occurred_at: new Date(row.occurred_at),
+        attempts: Number(row.attempts) || 0,
+      };
 
-      planned += out.planned;
-      claimed += out.claimed;
+      // حدثٌ واحدٌ ⇐ مستقبِلون كُثر (بند ٢٢). وحارسُ التكرار في
+      // `claimSend` مفتاحُه (الحدث · القناة · المستقبِل)، فالتوزيعُ على
+      // عشرةٍ عشرةُ حجوزاتٍ متمايزة — ولا يُرسل لأحدهم مرّتين لو أُعيدت
+      // الدورةُ بعد سقوطٍ في منتصفها.
+      const targets =
+        row.event === "PriceDropped"
+          ? await priceDropRecipients(container, payload)
+          : recipient.email || recipient.phone
+            ? [recipient]
+            : [];
+
+      for (const target of targets.length ? targets : [null]) {
+        const out = await marketing.dispatch(due, target);
+        planned += out.planned;
+        claimed += out.claimed;
+      }
 
       // 🔴 يُوسَم مُسلَّماً **بعد** الحجز لا قبله: حدثٌ يُوسَم ثم يسقط
       // الحجزُ يضيع بلا أثر، ولا شيءَ يُعيده — الصندوقُ لا يُقرأ إلا

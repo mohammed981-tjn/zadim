@@ -6,7 +6,8 @@ import { Container } from "@/components/container"
 import { Price } from "@/components/price"
 import { SignOutButton } from "@/components/account/sign-out-button"
 import { AddressBook } from "@/components/account/address-book"
-import { currentCustomer, myOrders, savedAddresses } from "@/lib/auth-actions"
+import { FavoritesList } from "@/components/wishlist/favorites-list"
+import { currentCustomer, myFavorites, myOrders, savedAddresses } from "@/lib/auth-actions"
 import { digits } from "@/lib/money"
 import { t, type Locale } from "@/lib/i18n"
 
@@ -50,7 +51,11 @@ export default async function AccountPage({ params }: { params: Promise<{ locale
   const customer = await currentCustomer()
   if (!customer) redirect(`/${locale}/account/login`)
 
-  const [orders, addresses] = await Promise.all([myOrders(), savedAddresses()])
+  const [orders, addresses, favorites] = await Promise.all([
+    myOrders(),
+    savedAddresses(),
+    myFavorites(),
+  ])
   const name = [customer.first_name, customer.last_name].filter(Boolean).join(" ").trim()
 
   return (
@@ -65,6 +70,18 @@ export default async function AccountPage({ params }: { params: Promise<{ locale
         </div>
         <SignOutButton locale={locale} />
       </div>
+
+      <section aria-labelledby="favorites-heading" className="mb-12">
+        <h2 id="favorites-heading" className="mb-1 text-lg font-bold">
+          {t(locale, "wishlist.title")}
+        </h2>
+        {/* الوعدُ مكتوبٌ حيث تُرى القائمة: «سنخبرك حين ينخفض السعر» هو
+            سببُ وجودها، ومن لا يقرؤه يظنّها دفترَ روابط. */}
+        <p className="mb-4 text-sm text-muted-foreground">
+          {t(locale, "wishlist.priceDropNote")}
+        </p>
+        <FavoritesList locale={locale} items={favorites} />
+      </section>
 
       <section aria-labelledby="addresses-heading" className="mb-12">
         <h2 id="addresses-heading" className="mb-4 text-lg font-bold">

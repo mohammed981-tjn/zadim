@@ -4,8 +4,11 @@ import { cookies } from "next/headers"
 import { revalidatePath } from "next/cache"
 import {
   MedusaError,
+  addToWishlist,
   deleteSavedAddress,
   medusaAuth,
+  myWishlist,
+  removeFromWishlist,
   myAddresses,
   saveAddressToBook,
   type Customer,
@@ -13,6 +16,7 @@ import {
   type OrderSummary,
   type SaveAddressBookResult,
   type SavedAddress,
+  type WishlistEntry,
 } from "@/lib/medusa"
 
 /**
@@ -223,4 +227,43 @@ export async function removeAddress(id: string): Promise<boolean> {
   const ok = await deleteSavedAddress(id, token)
   if (ok) revalidatePath("/", "layout")
   return ok
+}
+
+/* ------------------------------------------------------------------ */
+/* المفضّلة                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * مفضّلةُ العميل — أو قائمةٌ فارغةٌ لمن ليس داخلاً.
+ *
+ * ⚠️ **ولا مفضّلةَ للضيف.** ولها سببٌ يتجاوز الكسل: نصُّ بند ٢٢ أن
+ * «**المفضّلة تعرف انخفاض السعر**»، والخبرُ يحتاج بريداً يصله. ومفضّلةٌ
+ * في كعكةٍ عند ضيفٍ لا بريدَ له تُرضي نصفَ الميزة وتُسقط نصفَها الذي
+ * يهمّ — ثم يظنّ صاحبُها أنه مشترِك.
+ */
+export async function myFavorites(): Promise<WishlistEntry[]> {
+  const token = await readSession()
+  if (!token) return []
+  return myWishlist(token)
+}
+
+export type FavoriteResult = { ok: true } | { ok: false; needsSignIn: boolean }
+
+export async function addFavorite(
+  productId: string,
+  variantId?: string | null,
+): Promise<FavoriteResult> {
+  const token = await readSession()
+  if (!token) return { ok: false, needsSignIn: true }
+  const ok = await addToWishlist(productId, token, variantId ?? null)
+  if (ok) revalidatePath("/", "layout")
+  return ok ? { ok: true } : { ok: false, needsSignIn: false }
+}
+
+export async function removeFavorite(productId: string): Promise<FavoriteResult> {
+  const token = await readSession()
+  if (!token) return { ok: false, needsSignIn: true }
+  const ok = await removeFromWishlist(productId, token)
+  if (ok) revalidatePath("/", "layout")
+  return ok ? { ok: true } : { ok: false, needsSignIn: false }
 }

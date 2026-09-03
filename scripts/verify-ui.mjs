@@ -279,7 +279,17 @@ async function buyOnce(ctx) {
 
     // «أضف إلى السلة» — بالدور لا بالمحدِّد: زرٌّ يُعاد تصميمُه لا
     // يكسر البوّابة، وزرٌّ يختفي يكسرها. وهذا هو المطلوب.
-    await page.getByRole("button", { name: /أضف|السلة/ }).first().click({ timeout: 20000 });
+    //
+    // ⚠️ **والاسمُ كاملٌ لا `/أضف|السلة/`.** كان فضفاضاً، فلمّا أُضيف
+    // زرُّ المفضّلة («أضف إلى المفضّلة») صار `.first()` يمسكه هو —
+    // فتُضغط ولا تُملأ السلّة، ثم يُحوَّل الإتمامُ إلى السلّة الفارغة
+    // وتسقط البوّابةُ عند حقلٍ لا وجودَ له. **والسقوطُ كان صحيحاً
+    // والمحدِّدُ هو الخطأ**: زرّان اسمُهما يبدأ بـ«أضف» على صفحةٍ
+    // واحدةٍ حالٌ عاديّة، والفاحصُ هو من يلزمه الدقّة.
+    await page
+      .getByRole("button", { name: "أضف إلى السلة", exact: true })
+      .first()
+      .click({ timeout: 20000 });
     await page.waitForTimeout(2000);
 
     await page.goto(`${BASE}/ar/checkout`, { waitUntil: "networkidle", timeout: 45000 });
@@ -565,6 +575,76 @@ async function accountChecks() {
     gone.status === 200
       ? pass("وصاحبُه يحذفه (200) — الحارسُ يمنع الغريبَ لا المالك")
       : fail(`صاحبُ العنوان لم يستطع حذفَه (${gone.status})`);
+
+    // ── ❤️ المفضّلة ─────────────────────────────────────────────
+    console.log("\n== ❤️ المفضّلة ==");
+    const WISH = "/store/customers/me/wishlist";
+
+    // 🔴 بلا رمز: لا تُقرأ. ومفضّلةُ شخصٍ تكشف ما يريده ومتى تردّد.
+    const wAnon = await fetch(`${api}${WISH}`, { headers: H });
+    wAnon.status === 401
+      ? pass("بلا رمزِ جلسة: المفضّلةُ لا تُقرأ (401)")
+      : fail(`المفضّلةُ قُرئت بلا رمز (${wAnon.status})`);
+
+    const prodRes = await fetch(`${api}/store/products?limit=1`, { headers: H });
+    const productId = (await prodRes.json())?.products?.[0]?.id;
+
+    if (!productId) {
+      fail("لا منتجَ لفحص المفضّلة");
+    } else {
+      const added = await post(WISH, { product_id: productId }, token);
+      const addedBody = await added.json().catch(() => ({}));
+      added.status === 201 && addedBody?.created === true
+        ? pass("وإضافةُ منتجٍ تنجح (201)")
+        : fail(`الإضافةُ أخفقت (${added.status})`);
+
+      // 🔴 والمتماثلةُ عند الإعادة: ضغطتان صفٌّ واحدٌ ونجاحٌ لا خطأ.
+      const twice = await post(WISH, { product_id: productId }, token);
+      const twiceBody = await twice.json().catch(() => ({}));
+      twice.status === 200 && twiceBody?.created === false
+        ? pass("وضغطةٌ ثانيةٌ تنجح ولا تُنشئ صفّاً — وإلا وصله خبران عن خفضٍ واحد")
+        : fail(`الإضافةُ المكرّرة: ${twice.status} created=${twiceBody?.created}`);
+
+      const listed = await (
+        await fetch(`${api}${WISH}`, { headers: { ...H, authorization: `Bearer ${token}` } })
+      ).json();
+      (listed?.items ?? []).length === 1 && listed.items[0]?.product_id === productId
+        ? pass("والقائمةُ صفٌّ واحدٌ بعنوان المنتج وصورته")
+        : fail(`القائمة: ${JSON.stringify(listed?.items ?? null).slice(0, 140)}`);
+
+      // وشاهدٌ سالب: معرّفٌ مخترَعٌ يُرفض — ولولاه لامتلأ الجدولُ
+      // بصفوفٍ لا تُعرض أبداً وتُسقط العميلَ في سقفٍ لا يفهمه.
+      const bogus = await post(WISH, { product_id: "prod_not_a_real_product" }, token);
+      bogus.status === 404
+        ? pass("ومعرّفُ منتجٍ مخترَعٌ يُرفض (404)")
+        : fail(`معرّفٌ مخترَعٌ قُبل (${bogus.status})`);
+
+      // ولا يرى أحدُهما مفضّلةَ الآخر.
+      const otherList = await (
+        await fetch(`${api}${WISH}`, { headers: { ...H, authorization: `Bearer ${otherToken}` } })
+      ).json();
+      (otherList?.items ?? []).length === 0
+        ? pass("وعميلٌ آخرُ لا يرى شيئاً — القائمةُ من رمز الجلسة لا من مُعامل")
+        : fail("عميلٌ رأى مفضّلةَ غيره");
+
+      const wGone = await fetch(`${api}${WISH}/${productId}`, {
+        method: "DELETE",
+        headers: { ...H, authorization: `Bearer ${token}` },
+      });
+      const wGoneBody = await wGone.json().catch(() => ({}));
+      wGone.status === 200 && wGoneBody?.removed === true
+        ? pass("والحذفُ يعمل")
+        : fail(`الحذفُ أخفق (${wGone.status})`);
+
+      // وحذفُ ما ليس فيها ينجح أيضاً: المطلوبُ ألّا يكون فيها، وهو ليس.
+      const wAgain = await fetch(`${api}${WISH}/${productId}`, {
+        method: "DELETE",
+        headers: { ...H, authorization: `Bearer ${token}` },
+      });
+      wAgain.status === 200
+        ? pass("وحذفٌ ثانٍ ينجح ولا يُردّ ٤٠٤ — فمن ضغط مرّتين نجح مرّتين")
+        : fail(`الحذفُ الثاني رُدّ (${wAgain.status})`);
+    }
   } catch (e) {
     fail(`سقطت فحوصُ الحساب: ${String(e.message).slice(0, 160)}`);
   }

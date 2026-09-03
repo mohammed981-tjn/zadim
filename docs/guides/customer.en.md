@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-03 — matches the attribute-filtering batch.
+> Last updated: 2026-09-03 — matches the favourites batch.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -117,6 +117,25 @@ adds two things: **your order history** and **your address book**.
 guest with it** — you'll be asked to sign in. The reason: the order would
 be filed into that account's history, and someone else's order must not
 land there.
+
+### Favourites
+
+Tap the **heart** on any product to add it to your favourites; they're
+all in `/en/account`.
+
+**It isn't a bookmark list**: when the price of something in it drops,
+we'll tell you. That's what it's for.
+
+⚠️ **It needs an account** — because the news needs an inbox to reach.
+Keeping favourites in your browser alone would give you the list and
+deny you the alert, while you believed you were subscribed to it.
+
+⚠️ **The alerts haven't started yet**: the messaging provider (email /
+SMS) isn't connected, so alerts are queued and not sent. We won't tell
+you one was sent when it wasn't. The day it's connected they'll reach
+you with nothing to do on your side.
+
+---
 
 ### Your addresses
 

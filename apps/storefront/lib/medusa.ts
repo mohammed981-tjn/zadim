@@ -794,6 +794,71 @@ export async function deleteSavedAddress(id: string, token: string): Promise<boo
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Wishlist                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface WishlistEntry {
+  id: string
+  product_id: string
+  variant_id: string | null
+  title: string
+  handle: string
+  thumbnail: string | null
+  created_at: string
+}
+
+/**
+ * مفضّلةُ العميل (بند ٢٢).
+ *
+ * ⚠️ **والخادمُ يُصفّي المنتجاتِ المحذوفة**: صفُّ منتجٍ حُذف يبقى ولا
+ * يُعرض — فلا مفتاحَ أجنبيَّ إلى جدولٍ ليس لنا، ولا حذفَ صامتٌ عند كلّ
+ * قراءة (منتجٌ أُخفي مؤقّتاً كان سيمحو مفضّلةَ ألفِ عميل).
+ */
+export async function myWishlist(token: string): Promise<WishlistEntry[]> {
+  try {
+    const data = await medusaAuth<{ items: WishlistEntry[] }>(
+      "/store/customers/me/wishlist",
+      null,
+      token,
+    )
+    return data.items ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function addToWishlist(
+  productId: string,
+  token: string,
+  variantId?: string | null,
+): Promise<boolean> {
+  try {
+    await medusaFetch("/store/customers/me/wishlist", {
+      method: "POST",
+      body: JSON.stringify({ product_id: productId, variant_id: variantId ?? null }),
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function removeFromWishlist(productId: string, token: string): Promise<boolean> {
+  try {
+    await medusaFetch(`/store/customers/me/wishlist/${encodeURIComponent(productId)}`, {
+      method: "DELETE",
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function quoteCart(cartId: string): Promise<Quote> {
   const data = await medusaFetch<{ quote: Quote }>(`/store/carts/${cartId}/quote`, {
     method: "POST",
