@@ -644,6 +644,50 @@ async function accountChecks() {
       wAgain.status === 200
         ? pass("وحذفٌ ثانٍ ينجح ولا يُردّ ٤٠٤ — فمن ضغط مرّتين نجح مرّتين")
         : fail(`الحذفُ الثاني رُدّ (${wAgain.status})`);
+
+      // ── ⭐ التقييمات ─────────────────────────────────────────
+      console.log("\n== ⭐ التقييمات — لا تقييمَ بلا شراء ==");
+      const REV = `/store/products/${productId}/reviews`;
+
+      // 🔴 الشاهدُ الأهمّ: **من لم يشترِ يُردّ** ولو كان داخلاً.
+      const notBought = await post(
+        REV,
+        { order_line_item_id: "ordli_never_bought_this", rating: 5 },
+        token
+      );
+      const notBoughtBody = await notBought.json().catch(() => ({}));
+      notBought.status === 403 && notBoughtBody?.error?.code === "PURCHASE_REQUIRED"
+        ? pass("عميلٌ داخلٌ لم يشترِ ⇒ PURCHASE_REQUIRED (٤٠٣) — والقيدُ في القاعدة لا في النموذج")
+        : fail(
+            `قُبل تقييمٌ بلا شراء (${notBought.status}) — ` +
+              "«يشترط الشراء» صار فحصَ واجهةٍ يتخطّاه من ينادي المسارَ بنفسه"
+          );
+
+      // وبلا رمزٍ أصلاً.
+      const revAnon = await post(REV, { order_line_item_id: "x", rating: 5 });
+      revAnon.status === 401
+        ? pass("وبلا رمزِ جلسة ⇒ ٤٠١")
+        : fail(`كُتب تقييمٌ بلا رمز (${revAnon.status})`);
+
+      // ومدى التقييم يُفحص قبل أن يصل القاعدة.
+      const badRating = await post(
+        REV,
+        { order_line_item_id: "ordli_x", rating: 9 },
+        token
+      );
+      badRating.status === 400
+        ? pass("وتقييمٌ خارجَ ١–٥ يُردّ ٤٠٠")
+        : fail(`قُبل تقييمٌ خارج المدى (${badRating.status})`);
+
+      // والقراءةُ عامّةٌ بلا حساب — ولا تكشف هويّةَ من كتب.
+      const readRes = await fetch(`${api}${REV}`, { headers: H });
+      const readBody = await readRes.json().catch(() => ({}));
+      readRes.status === 200 && Array.isArray(readBody?.reviews) && readBody?.summary
+        ? pass("والقراءةُ عامّةٌ بلا حساب، ومعها ملخّصٌ (متوسّطٌ وعدد)")
+        : fail(`قراءةُ التقييمات: ${readRes.status}`);
+      !JSON.stringify(readBody?.reviews ?? []).includes("customer_id")
+        ? pass("ولا يُعاد `customer_id` — رأيٌ عامٌّ لا يُربط بشخصٍ لمن يجمع الردود")
+        : fail("معرّفُ العميل مكشوفٌ في التقييمات");
     }
   } catch (e) {
     fail(`سقطت فحوصُ الحساب: ${String(e.message).slice(0, 160)}`);

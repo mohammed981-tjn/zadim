@@ -89,6 +89,16 @@ export interface Order {
   id: string
   display_id: number | string
   total: number
+  items?: OrderLine[]
+}
+
+/** سطرُ طلبٍ — وما يلزم لكتابة تقييمٍ عنه (بند ٢٣). */
+export interface OrderLine {
+  id: string
+  title: string
+  quantity: number
+  thumbnail: string | null
+  product_id: string | null
 }
 
 export interface ShippingOption {
@@ -574,9 +584,22 @@ export async function removeLineItem(cartId: string, lineId: string): Promise<Ca
 /* Quote & checkout                                                    */
 /* ------------------------------------------------------------------ */
 
+/**
+ * طلبٌ بسطوره.
+ *
+ * ⚠️ **و`fields` صريحةٌ رغم أنها غيرُ لازمةٍ اليوم.** قِيس أن
+ * `/store/orders/:id` يُعيد `items.product_id` **افتراضاً** — فالسطرُ
+ * لا يُصلح عطلاً قائماً. وهو مكتوبٌ لأن هذه الحقولَ **شرطُ عمل زرّ
+ * التقييم**: بلا `product_id` لا يُعرف أيُّ منتجٍ يُقيَّم. و`+` يضيف
+ * إلى الافتراضيّ ولا يستبدله، فإن تغيّر الافتراضُ يوماً بقيت تصل.
+ */
 export async function getOrder(id: string): Promise<Order | null> {
+  const fields = "+items.product_id,+items.thumbnail,+items.quantity"
   try {
-    const data = await medusaFetch<{ order: Order }>(`/store/orders/${id}`, { cache: "no-store" })
+    const data = await medusaFetch<{ order: Order }>(
+      `/store/orders/${id}?fields=${encodeURIComponent(fields)}`,
+      { cache: "no-store" },
+    )
     return data?.order ?? null
   } catch (err) {
     if (err instanceof MedusaError && err.status === 404) return null
@@ -856,6 +879,72 @@ export async function removeFromWishlist(productId: string, token: string): Prom
     return true
   } catch {
     return false
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reviews                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface ProductReview {
+  id: string
+  rating: number
+  body: string | null
+  created_at: string
+}
+
+export interface ReviewSummary {
+  average: number | null
+  count: number
+}
+
+/**
+ * تقييماتُ منتجٍ **المنشورةُ وحدَها** وملخّصُها (بند ٢٣).
+ *
+ * ⚠️ **ولا يُعيد الخادمُ `customer_id`**: التقييمُ عامٌّ يُقرأ بلا حساب،
+ * ومعرّفُ العميل فيه يربط رأياً بشخصٍ لمن يجمع الردود.
+ */
+export async function getProductReviews(
+  productId: string,
+): Promise<{ reviews: ProductReview[]; summary: ReviewSummary }> {
+  try {
+    const data = await medusaFetch<{ reviews: ProductReview[]; summary: ReviewSummary }>(
+      `/store/products/${encodeURIComponent(productId)}/reviews`,
+      { revalidate: 60 },
+    )
+    return { reviews: data.reviews ?? [], summary: data.summary ?? { average: null, count: 0 } }
+  } catch {
+    // 🔴 سقوطُ التقييمات **لا يُسقط صفحةَ المنتج**: هي إضافةٌ إلى
+    // الصفحة لا شرطٌ لها، ومن يريد الشراءَ يجب أن يستطيع.
+    return { reviews: [], summary: { average: null, count: 0 } }
+  }
+}
+
+export type SubmitReviewResult =
+  | { ok: true; message: string }
+  | { ok: false; code: string; message: string }
+
+export async function submitReview(
+  productId: string,
+  input: { order_line_item_id: string; rating: number; body?: string },
+  token: string,
+): Promise<SubmitReviewResult> {
+  try {
+    const data = await medusaFetch<{ message_ar?: string }>(
+      `/store/products/${encodeURIComponent(productId)}/reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        cache: "no-store",
+        headers: { authorization: `Bearer ${token}` },
+      },
+    )
+    return { ok: true, message: data.message_ar ?? "وصل تقييمُك." }
+  } catch (err) {
+    if (err instanceof MedusaError) {
+      return { ok: false, code: err.code ?? "UNKNOWN", message: err.message }
+    }
+    return { ok: false, code: "UNKNOWN", message: "تعذّر إرسال التقييم." }
   }
 }
 

@@ -9,6 +9,7 @@ import {
   medusaAuth,
   myWishlist,
   removeFromWishlist,
+  submitReview,
   myAddresses,
   saveAddressToBook,
   type Customer,
@@ -16,6 +17,7 @@ import {
   type OrderSummary,
   type SaveAddressBookResult,
   type SavedAddress,
+  type SubmitReviewResult,
   type WishlistEntry,
 } from "@/lib/medusa"
 
@@ -266,4 +268,26 @@ export async function removeFavorite(productId: string): Promise<FavoriteResult>
   const ok = await removeFromWishlist(productId, token)
   if (ok) revalidatePath("/", "layout")
   return ok ? { ok: true } : { ok: false, needsSignIn: false }
+}
+
+/* ------------------------------------------------------------------ */
+/* التقييمات                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * كتابةُ تقييم (بند ٢٣) — **وتشترط الشراء**.
+ *
+ * والشرطُ مفروضٌ في القاعدة بمُطلِق (`zadim_guard_review_purchase_trg`)
+ * لا هنا. فما يقع هنا نقلُ رمز الجلسة وترجمةُ الرفض — ولو فُحص هنا
+ * أيضاً لصار المنطقُ في موضعين يفترقان.
+ */
+export async function writeReview(
+  productId: string,
+  input: { order_line_item_id: string; rating: number; body?: string },
+): Promise<{ ok: boolean; message: string }> {
+  const token = await readSession()
+  if (!token) return { ok: false, message: "سجّلِ الدخولَ لكتابة تقييم." }
+  const res: SubmitReviewResult = await submitReview(productId, input, token)
+  if (res.ok) revalidatePath("/", "layout")
+  return { ok: res.ok, message: res.message }
 }

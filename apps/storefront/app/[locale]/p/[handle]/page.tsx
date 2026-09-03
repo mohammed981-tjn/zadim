@@ -7,7 +7,8 @@ import { BuyBox } from "@/components/product/buy-box"
 import { EmptyState, ErrorState } from "@/components/states"
 import { FavoriteButton } from "@/components/wishlist/favorite-button"
 import { isSignedIn, myFavorites } from "@/lib/auth-actions"
-import { getProductByHandle, type ProductImage } from "@/lib/medusa"
+import { ReviewList } from "@/components/review/review-list"
+import { getProductByHandle, getProductReviews, type ProductImage } from "@/lib/medusa"
 
 type Params = { handle: string; locale: Locale }
 
@@ -63,7 +64,11 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
 
   // حالةُ المفضّلة تُقرأ من الخادم لا من المتصفّح: قلبٌ يبدأ فارغاً
   // ثم يمتلئ بعد لحظةٍ يجعل الزائرَ يضغطه فيُلغي ما كان محفوظاً.
-  const [signedIn, favorites] = await Promise.all([isSignedIn(), myFavorites()])
+  const [signedIn, favorites, reviewData] = await Promise.all([
+    isSignedIn(),
+    myFavorites(),
+    getProductReviews(product.id),
+  ])
   const saved = favorites.some((f) => f.product_id === product.id)
 
   return (
@@ -91,6 +96,12 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
         </div>
         <BuyBox locale={locale} product={product} />
       </div>
+
+      <ReviewList
+        locale={locale}
+        reviews={reviewData.reviews}
+        summary={reviewData.summary}
+      />
     </Container>
   )
 }

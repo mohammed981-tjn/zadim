@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-03 — matches the favourites batch.
+> Last updated: 2026-09-03 — matches the reviews batch.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -134,6 +134,28 @@ deny you the alert, while you believed you were subscribed to it.
 SMS) isn't connected, so alerts are queued and not sent. We won't tell
 you one was sent when it wasn't. The day it's connected they'll reach
 you with nothing to do on your side.
+
+---
+
+### Reviews
+
+Every product page shows its reviews, with the average and the count.
+
+**No review without a purchase.** So reviews are written from **your
+order page**, not the product page: open the order from `/en/account`
+and rate each item you bought in it. The rule is enforced in the database
+itself — not in the form — and it checks three things: that the purchase
+happened, that it was **yours**, and that it was **for this exact
+product**.
+
+⚠️ **Published after review**: yours won't appear immediately. Product
+pages show up in search results, and publishing any text instantly
+without moderation turns them into a noticeboard. We tell you this as
+you write, not afterwards, so you don't go looking for your review and
+assume it was lost.
+
+⚠️ One review per item you bought. If you bought the same item twice you
+can review it twice — two experiences at two times.
 
 ---
 

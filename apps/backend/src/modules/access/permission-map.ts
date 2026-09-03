@@ -114,6 +114,14 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/catalog\/translations(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/catalog\/translations(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
 
+  // ── مراجعةُ التقييمات (بند ٢٣) ─────────────────────────────────
+  // نصٌّ يكتبه الجمهورُ ويُعرض على صفحةٍ تُفهرَس — فهو محتوى، وبيتُه
+  // `cms.manage` عند من يكتب لغةَ المتجر. **لا `products.write`**:
+  // نشرُ رأيٍ في منتجٍ ليس تغييرَ سعره ولا مخزونِه، ومن يضبط الكتالوج
+  // ليس بالضرورة من يحكم على نصٍّ يقرؤه الجمهور.
+  { pattern: /^\/reviews(\/|$)/, methods: ["GET"], permission: "cms.manage" },
+  { pattern: /^\/reviews(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "cms.manage" },
+
   // ── وحدة warehouse ──────────────────────────────────────────────
   // الدفترُ **للقراءة فقط**: لا مسارَ كتابةٍ له أصلاً — يكتبه مُطلِقُ
   // القاعدة. ولو وُجد مسارٌ لكان بابَ تزويرٍ في السجلّ الذي يُحتكم إليه.
