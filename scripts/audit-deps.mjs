@@ -15,15 +15,45 @@
  * ── فالحكمُ على ثلاثة، وكلُّها ممّا نملك ─────────────────────────
  *
  * ١. **أيُّ ثغرةٍ حرجة** — أينما كانت. لا خطَّ أساسٍ لها ولا تسامح.
- * ٢. **ازديادُ العدد** عن خطّ الأساس المسجَّل — سقّاطةٌ لا تُرفع.
+ * ٢. **ازديادُ العدد** عن المسجَّل — **وقد تغيّرت شجرةُ الاعتماديات**.
  *    فحزمةٌ جديدةٌ تجرّ ثغرةً تُوقف الدفعة، وشجرةُ Medusa الثابتة لا.
  * ٣. **ثغرةٌ في اعتماديةٍ مباشرةٍ ليست من Medusa** — تلك اخترناها نحن
  *    ونستطيع تبديلَها، فلا عذر.
  *
- * وخطُّ الأساس يُخفَّض ولا يُرفع: `node scripts/audit-deps.mjs --update`
- * تكتبه، ويُراجَع في الدفعة كأيّ سطرٍ آخر.
+ * ── ولماذا صار الشرطُ الثاني مشروطاً ببصمة القفل ────────────────
+ *
+ * لأن العددَ وحدَه لا يفرّق بين حدثين مختلفين تماماً:
+ *
+ *   دفعةٌ تجرّ حزمةً بثغرة              ⇐ ذنبُ الدفعة، ونملك إصلاحَه.
+ *   إخطارٌ يُنشر على شجرةٍ لم تتغيّر   ⇐ لا ذنبَ لأحد، ولا نملك إصلاحَه.
+ *
+ * وقد وقع الثاني فعلاً: في 2026-09-02 صار `main` أحمرَ برسالةِ «دفعةٌ
+ * أضافت ثغرة» **ولم تكن دفعةٌ قد أضافت شيئاً**. نُشرت إخطاراتٌ على
+ * `qs` و`uuid` وهما مثبَّتتان من قبل: المتوسطةُ ٧ ⇐ ١٠، والحرجُ صفر،
+ * والعالي ٦٩ كما هو، والعشرُ كلُّها غيرُ مباشرة.
+ *
+ * وذلك يُدخل السكربتَ في الحال التي يحذّر منها رأسُه أعلاه: ورشةٌ تفشل
+ * **ولا تستطيع أن تنجح** — لأن علاجَها الوحيد رفعُ خطّ الأساس، وهو ما
+ * منعناه بأنفسنا.
+ *
+ * فصارت **بصمةُ `package-lock.json`** هي السقّاطة، لا الرقمُ وحدَه:
+ *
+ *   القفلُ تغيّر  + ازداد العدد ⇐ سقوط. الدفعةُ غيّرت الشجرة.
+ *   القفلُ كما هو + ازداد العدد ⇐ تنبيهٌ يُسمّي الفرق. الشجرةُ كما هي.
+ *
+ * والحرجُ والاعتماديةُ المباشرةُ يبقيان مُسقِطَين في الحالين — فانجرافُ
+ * الإخطارات لا يفتح باباً، وإنما يمنع اتّهاماً كاذباً.
+ *
+ * وبصمةٌ غيرُ مسجّلةٍ تُعامَل معاملةَ **تغيّرٍ** لا معاملةَ تطابق:
+ * التشدّدُ هو الافتراضُ الصحيح في حارس.
+ *
+ * ــ ومعنى الرقم تغيّر تبعاً لذلك: لم يعد ميزانيةَ تسامحٍ تُمنح، بل
+ * **آخرَ عدٍّ مرصودٍ لهذه الشجرة**. والسقّاطةُ انتقلت من الرقم إلى
+ * البصمة. `node scripts/audit-deps.mjs --update` يسجّلهما معاً،
+ * ويُراجَع في الدفعة كأيّ سطرٍ آخر.
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,10 +66,31 @@ const APPS = ["apps/backend", "apps/storefront"];
 const UPSTREAM = /^@medusajs\//;
 
 /**
+ * بصمةُ شجرة الاعتماديات — على `package-lock.json` لا على `package.json`.
+ *
+ * القفلُ هو ما يصف الشجرة فعلاً: نسخُ كلِّ حزمةٍ غيرِ مباشرة وأصلُها.
+ * و`package.json` يصف النيّة لا النتيجة — فمداه `^1.2.3` يُثبِّت اليوم
+ * نسخةً ويُثبّت غداً أخرى بلا سطرٍ يتغيّر فيه.
+ *
+ * وغيابُ القفل يُعاد `null` فيُعامَل معاملةَ تغيّرٍ (التشدّد الافتراضي).
+ */
+export function fingerprintOf(buf) {
+  return createHash("sha256").update(buf).digest("hex").slice(0, 16);
+}
+
+function lockFingerprint(app) {
+  try {
+    return fingerprintOf(readFileSync(join(ROOT, app, "package-lock.json")));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * الحكمُ على تقريرٍ واحد. مفصولٌ عن `npm` عمداً كي يُختبر ببيانات
  * مصطنَعة — فاحصٌ لا يُختبر إلا على الحال السليمة لا يُعرف أعمى هو أم لا.
  */
-export function judge(app, report, base) {
+export function judge(app, report, base, lockMatches = false) {
   const failures = [];
   const notes = [];
 
@@ -60,15 +111,27 @@ export function judge(app, report, base) {
     failures.push(`${app}: ثغرةٌ حرجة — ${criticals.join(" · ")}`);
   }
 
-  // ٢) السقّاطة.
+  // ٢) السقّاطة — على البصمة لا على الرقم وحدَه.
   for (const level of ["high", "moderate"]) {
     const allowed = base?.[level] ?? 0;
     if (counts[level] > allowed) {
-      failures.push(
-        `${app}: ${level} صار ${counts[level]} وخطُّ الأساس ${allowed} — دفعةٌ أضافت ثغرة`
-      );
+      if (lockMatches) {
+        // الشجرةُ لم تتغيّر: هذه إخطاراتٌ نُشرت على حزمٍ مثبَّتةٍ من قبل.
+        // لا دفعةَ تُلام، ولا إصلاحَ نملكه — فتنبيهٌ لا سقوط.
+        notes.push(
+          `${app}: ${level} صار ${counts[level]} والمسجَّل ${allowed} — ` +
+            `والقفلُ لم يتغيّر، فهذه إخطاراتٌ جديدة على شجرةٍ ثابتة لا ثغرةٌ أُضيفت. ` +
+            `سجّلها بـ--update بعد مراجعتها.`
+        );
+      } else {
+        failures.push(
+          `${app}: ${level} صار ${counts[level]} والمسجَّل ${allowed} — ` +
+            `والقفلُ تغيّر: دفعةٌ غيّرت الشجرة وزادت الثغرات. ` +
+            `وإن كانت الزيادةُ انجرافَ إخطاراتٍ سابقاً لم يُسجَّل، فسجّله بـ--update.`
+        );
+      }
     } else if (counts[level] < allowed) {
-      notes.push(`${app}: ${level} انخفض ${allowed} ⇐ ${counts[level]} — اخفض خطَّ الأساس`);
+      notes.push(`${app}: ${level} انخفض ${allowed} ⇐ ${counts[level]} — اخفض المسجَّل`);
     }
   }
 
@@ -83,7 +146,7 @@ export function judge(app, report, base) {
   return { counts, failures, notes };
 }
 
-/** الشاهد الموجب: أربعُ حالاتٍ نعرف جوابَها. */
+/** الشاهد الموجب: تسعُ حالاتٍ نعرف جوابَها. */
 function positiveControl() {
   const errs = [];
   const base = { high: 5, moderate: 0 };
@@ -97,8 +160,9 @@ function positiveControl() {
   }, base);
   if (!crit.failures.length) errs.push("الشاهد ٢: ثغرةٌ حرجة مرّت");
 
+  // ٣) ازديادٌ والقفلُ تغيّر ⇐ سقوط. (والافتراضُ عند غياب البصمة هو هذا.)
   const grew = judge("t", { metadata: { vulnerabilities: { high: 6 } }, vulnerabilities: {} }, base);
-  if (!grew.failures.length) errs.push("الشاهد ٣: ازديادٌ فوق خطّ الأساس مرّ");
+  if (!grew.failures.length) errs.push("الشاهد ٣: ازديادٌ مع تغيّر القفل مرّ");
 
   const mine = judge("t", {
     metadata: { vulnerabilities: { high: 5 } },
@@ -112,6 +176,38 @@ function positiveControl() {
     vulnerabilities: { "@medusajs/framework": { severity: "high", isDirect: true } },
   }, base);
   if (upstream.failures.length) errs.push("الشاهد ٥: ثغرةُ Medusa المباشرة أُسقطت وكان يجب تجاهلُها");
+
+  // ٦) نفسُ الازدياد والقفلُ **لم** يتغيّر ⇐ تنبيهٌ لا سقوط.
+  //    هذه هي الحالةُ التي أوقفت `main` في 2026-09-02.
+  const drift = judge(
+    "t", { metadata: { vulnerabilities: { high: 6 } }, vulnerabilities: {} }, base, true
+  );
+  if (drift.failures.length) errs.push("الشاهد ٦: انجرافُ إخطاراتٍ على شجرةٍ ثابتة أُسقط");
+  if (!drift.notes.length) errs.push("الشاهد ٦: الانجرافُ مرّ صامتاً بلا تنبيه");
+
+  // ٧) والانجرافُ لا يفتح باباً: الحرجُ يسقط ولو كان القفلُ ثابتاً.
+  const driftCrit = judge("t", {
+    metadata: { vulnerabilities: { critical: 1, high: 5 } },
+    vulnerabilities: { boom: { severity: "critical", isDirect: false } },
+  }, base, true);
+  if (!driftCrit.failures.length) errs.push("الشاهد ٧: ثغرةٌ حرجة مرّت لأن القفل ثابت");
+
+  // ٨) وكذلك اعتماديتُنا المباشرة.
+  const driftMine = judge("t", {
+    metadata: { vulnerabilities: { high: 5 } },
+    vulnerabilities: { "left-pad": { severity: "high", isDirect: true } },
+  }, base, true);
+  if (!driftMine.failures.length) errs.push("الشاهد ٨: ثغرةٌ في اعتماديةٍ لنا مرّت لأن القفل ثابت");
+
+  // ٩) والبصمةُ نفسُها تُفحص — فهي الآن الآليّةُ الحاملة، ودالّةُ تجزئةٍ
+  //    تُعيد ثابتاً لكلّ مدخلٍ تجعل كلَّ ازديادٍ «انجرافاً» فيسقط الحارس
+  //    كلُّه صامتاً. ولا يُكتشف ذلك إلا بفحصها.
+  const a = fingerprintOf(Buffer.from('{"lockfileVersion":3,"packages":{}}'));
+  const b = fingerprintOf(Buffer.from('{"lockfileVersion":3,"packages":{"x":1}}'));
+  if (a === b) errs.push("الشاهد ٩: قفلان مختلفان أعطيا البصمةَ نفسَها");
+  if (a !== fingerprintOf(Buffer.from('{"lockfileVersion":3,"packages":{}}'))) {
+    errs.push("الشاهد ٩: القفلُ نفسُه أعطى بصمتين — لا تطابقَ أبداً");
+  }
 
   return errs;
 }
@@ -144,7 +240,7 @@ if (control.length) {
   console.error("🔴 سقط الشاهدُ الموجب — الفاحصُ نفسُه معطوب.");
   process.exit(1);
 }
-console.log(`  ✅ الشاهد الموجب: خمسُ حالاتٍ معروفةُ الجواب مرّت`);
+console.log(`  ✅ الشاهد الموجب: تسعُ حالاتٍ معروفةُ الجواب مرّت`);
 
 /**
  * خطُّ الأساس — يُقرأ مباشرةً، ولا يُسأل عن وجوده أوّلاً.
@@ -181,18 +277,22 @@ let failed = 0;
 
 for (const app of APPS) {
   const report = auditOf(app);
-  const { counts, failures, notes } = judge(app, report, baseline[app]);
-  fresh[app] = { high: counts.high, moderate: counts.moderate };
+  const lock = lockFingerprint(app);
+  // بصمةٌ غائبةٌ من أيّ الطرفين ⇐ لا تطابق. التشدّدُ هو الافتراض.
+  const lockMatches = lock !== null && baseline[app]?.lockfile === lock;
+  const { counts, failures, notes } = judge(app, report, baseline[app], lockMatches);
+  fresh[app] = { high: counts.high, moderate: counts.moderate, lockfile: lock };
 
   console.log(
-    `\n${app}: حرجة ${counts.critical} · عالية ${counts.high} · متوسطة ${counts.moderate} · منخفضة ${counts.low}`
+    `\n${app}: حرجة ${counts.critical} · عالية ${counts.high} · متوسطة ${counts.moderate} · منخفضة ${counts.low}` +
+      `  ·  القفل ${lock ?? "غائب"}${lockMatches ? " (كما هو)" : " (تغيّر أو لم يُسجَّل)"}`
   );
   for (const n of notes) console.log(`  ℹ️ ${n}`);
   for (const f of failures) {
     console.error(`  ✗ ${f}`);
     failed++;
   }
-  if (!failures.length) console.log(`  ✅ ضمن خطّ الأساس`);
+  if (!failures.length) console.log(`  ✅ لا ثغرةَ تخصّنا`);
 }
 
 if (update) {
