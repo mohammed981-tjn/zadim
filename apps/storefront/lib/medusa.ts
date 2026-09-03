@@ -532,6 +532,49 @@ export async function addShippingMethod(cartId: string, optionId: string): Promi
 }
 
 /* ------------------------------------------------------------------ */
+/* Customer account                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface Customer {
+  id: string
+  email: string
+  first_name?: string | null
+  last_name?: string | null
+  phone?: string | null
+}
+
+/** طلبٌ في قائمة «طلباتي» — ما يكفي للعرض، لا الطلبُ كاملاً. */
+export interface OrderSummary {
+  id: string
+  display_id: number | string
+  status: string
+  created_at: string
+  /** بالهللات. */
+  total: number
+  currency_code: string
+}
+
+/**
+ * نداءُ مصادقةٍ أو نداءٌ برمز جلسة.
+ *
+ * ومفصولٌ عن `medusaFetch` لأنه يختلف في ثلاثة: يحمل `Authorization`،
+ * ويقبل أن يكون بلا جسم (`GET`)، **ولا يُخبَّأ أبداً** — ردُّ
+ * `‎/store/customers/me` يخصّ شخصاً بعينه، وتخبئتُه تعرضُه لغيره.
+ */
+export async function medusaAuth<T>(
+  path: string,
+  body?: unknown | null,
+  token?: string,
+): Promise<T> {
+  return medusaFetch<T>(path, {
+    method: body === undefined || body === null ? "GET" : "POST",
+    ...(body === undefined || body === null ? {} : { body: JSON.stringify(body) }),
+    ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
+    cache: "no-store",
+  })
+}
+
+/* ------------------------------------------------------------------ */
 /* National address                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -570,12 +613,15 @@ export type SaveAddressResult =
 export async function setCartAddress(
   cartId: string,
   form: NationalAddressForm,
+  /** رمزُ الجلسة إن كان العميلُ داخلاً — يربط السلّةَ بحسابه. */
+  token?: string | null,
 ): Promise<SaveAddressResult> {
   try {
     await medusaFetch(`/store/carts/${cartId}/address`, {
       method: "POST",
       body: JSON.stringify(form),
       cache: "no-store",
+      ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
     })
     return { ok: true }
   } catch (err) {

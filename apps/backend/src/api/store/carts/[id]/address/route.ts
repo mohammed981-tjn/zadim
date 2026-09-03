@@ -70,7 +70,75 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const address = toMedusaAddress(check.value);
-  const email = String(body.email ?? "").trim().toLowerCase();
+  let email = String(body.email ?? "").trim().toLowerCase();
+
+  // ── ربطُ السلّة بالعميل إن كان داخلاً ─────────────────────────
+  //
+  // 🔴 **ولا يُقبل `customer_id` من الجسم أبداً.** هذا المسارُ عامٌّ،
+  // ومن يرسل معرّفَ عميلٍ في الجسم يربط سلّتَه بحساب غيره — فتظهر
+  // طلباتُه في «طلباتي» عند شخصٍ آخر، ويقرأ عنوانَه وهاتفَه.
+  //
+  // فالهويّةُ تُشتقّ من **رمز الجلسة** وحدَه: يُمرَّر كما وصل إلى
+  // `‎/store/customers/me`، ومن يُجيبه Medusa فهو صاحبُه. ورمزٌ مزوَّرٌ
+  // يُردّ من هناك لا من هنا.
+  //
+  // وغيابُ الرمز ليس خطأً: الشراءُ ضيفاً مسارٌ كاملُ الحقوق (بند ٨).
+  let customerId: string | null = null;
+  const bearer = String(req.headers["authorization"] ?? "");
+  if (bearer.toLowerCase().startsWith("bearer ")) {
+    try {
+      const base = process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000";
+      const meRes = await fetch(`${base}/store/customers/me`, {
+        headers: {
+          authorization: bearer,
+          "x-publishable-api-key": String(req.headers["x-publishable-api-key"] ?? ""),
+        },
+      });
+      if (meRes.ok) {
+        const me = (await meRes.json()) as any;
+        customerId = me?.customer?.id ?? null;
+        // بريدُ الحساب يسبق ما كُتب في النموذج: الطلبُ يخصّ الحساب،
+        // وبريدان لعميلٍ واحدٍ يجعلان «طلباتي» ناقصة.
+        if (me?.customer?.email) email = String(me.customer.email).toLowerCase();
+      }
+    } catch {
+      // تعذّرُ التعرّف لا يمنع الشراء — يمضي ضيفاً.
+      customerId = null;
+    }
+  }
+
+  // ── 🔴 بريدُ حسابٍ مسجَّل لا يُقبل من ضيف ──────────────────────
+  //
+  // قِيس على الخادم: `updateCartWorkflow` يمرّ بـ`findOrCreateCustomer`
+  // **فيربط السلّةَ بالحساب المسجَّل متى طابق البريد** — بلا رمزِ جلسة.
+  // فضيفٌ يكتب بريدَ غيره:
+  //
+  //   ١) يُدرج طلبَه في «طلباتي» عند صاحب الحساب، ومعه عنوانُ الضيف
+  //      وجوّالُه — تسريبُ بيانات في الاتجاه المعاكس.
+  //   ٢) **ويُفسد سجلَّ COD للضحية**: مفتاحُ منع الدفع عند الاستلام
+  //      يُبنى من الجوّال ثم البريد (`payments/cod.ts`)، فرفضُ الضيف
+  //      عند الباب يُحسب على صاحب الحساب.
+  //
+  // فيُطلب الدخولُ بدل الربط الصامت. وهو نفسُ ما تفعله المتاجرُ
+  // المحترمة: «لهذا البريد حسابٌ عندنا — ادخلْ».
+  //
+  // ⚠️ ولا يقع هذا على من دخل فعلاً: بريدُه يأتي من رمزه لا من نموذجه.
+  if (!customerId && email) {
+    const customerModule: any = req.scope.resolve(Modules.CUSTOMER);
+    const [registered] = await customerModule.listCustomers(
+      { email, has_account: true },
+      { take: 1 }
+    );
+    if (registered) {
+      return res.status(409).json({
+        error: {
+          code: "EMAIL_HAS_ACCOUNT",
+          message_ar:
+            "لهذا البريد حسابٌ عندنا. سجّلِ الدخولَ لإتمام الطلب، أو استعملْ بريداً آخر.",
+        },
+      });
+    }
+  }
 
   await updateCartWorkflow(req.scope).run({
     input: {
@@ -80,6 +148,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       shipping_address: address,
       billing_address: address,
       ...(email ? { email } : {}),
+      ...(customerId ? { customer_id: customerId } : {}),
     } as any,
   });
 

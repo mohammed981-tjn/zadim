@@ -279,6 +279,117 @@ async function buyOnce(ctx) {
   }
 }
 
+
+/**
+ * حسابُ العميل — التسجيلُ والربطُ وحارسُ البريد (بند ٢١).
+ *
+ * ── ولماذا بـ`fetch` لا بمتصفّح ─────────────────────────────────
+ *
+ * الثلاثةُ التي تُفحص هنا **قراراتُ خادمٍ لا شاشات**: من يُربط بأيّ
+ * حساب. والمتصفّحُ يُثبت أن الشاشةَ تعمل، ولا يُثبت أن سلّةَ ضيفٍ لم
+ * تُربط بحساب غيره — وذاك ما يُخشى.
+ */
+async function accountChecks() {
+  console.log("\n== 👤 حسابُ العميل ==");
+  const api = process.env.MEDUSA_URL ?? "http://localhost:9000";
+  const pk = process.env.MEDUSA_PK ?? process.env.NEXT_PUBLIC_MEDUSA_PK ?? "";
+  const H = { "content-type": "application/json", "x-publishable-api-key": pk };
+
+  const post = (path, body, token) =>
+    fetch(`${api}${path}`, {
+      method: "POST",
+      headers: token ? { ...H, authorization: `Bearer ${token}` } : H,
+      body: JSON.stringify(body ?? {}),
+    });
+
+  try {
+    const email = `gate${Date.now()}@zadim.test`;
+    const password = "Zadim#Gate12345";
+
+    // ── التسجيل: ثلاث خطواتٍ لا واحدة ──────────────────────────
+    const reg = await post("/auth/customer/emailpass/register", { email, password });
+    const { token: regToken } = await reg.json();
+    regToken ? pass("التسجيل أعاد رمزاً") : fail(`التسجيل أخفق (${reg.status})`);
+
+    await post("/store/customers", { email, first_name: "بوّابة", last_name: "حساب" }, regToken);
+
+    // 🔴 رمزُ التسجيل **لا يصلح** لقراءة الحساب قبل التجديد — قِيس 401.
+    const before = await fetch(`${api}/store/customers/me`, {
+      headers: { ...H, authorization: `Bearer ${regToken}` },
+    });
+    before.status === 401
+      ? pass("ورمزُ التسجيل وحدَه لا يقرأ الحساب (401) — فالتجديدُ لازم")
+      : fail(`المنتظَر 401 قبل التجديد ووصل ${before.status} — إن تغيّر فراجعْ register()`);
+
+    const refreshed = await (await post("/auth/token/refresh", {}, regToken)).json();
+    const token = refreshed.token;
+    const me = await fetch(`${api}/store/customers/me`, {
+      headers: { ...H, authorization: `Bearer ${token}` },
+    });
+    // ⚠️ جسمُ `Response` يُقرأ **مرّةً واحدة** — فيُحفظ لا يُعاد نداؤه.
+    const meBody = await me.json().catch(() => ({}));
+    const customerId = meBody?.customer?.id ?? null;
+    me.status === 200 && customerId
+      ? pass("وبعد التجديد يُقرأ الحساب (200)")
+      : fail(`الحسابُ لا يُقرأ بعد التجديد (${me.status})`);
+
+    // ── حارسُ البريد: ضيفٌ ببريد حسابٍ مسجَّل ⇒ يُرفض ───────────
+    const regionRes = await fetch(`${api}/store/regions`, { headers: H });
+    const regionId = (await regionRes.json()).regions?.[0]?.id;
+    const newCart = async () =>
+      (await (await post("/store/carts", { region_id: regionId })).json()).cart?.id;
+
+    const ADDR = {
+      first_name: "ضيف",
+      last_name: "مجهول",
+      phone: "0555888777",
+      building_number: "1111",
+      street: "شارع",
+      district: "حيّ",
+      city: "الرياض",
+      postal_code: "11111",
+      additional_number: "2222",
+    };
+
+    const cartGuest = await newCart();
+    const hijack = await post(`/store/carts/${cartGuest}/address`, { ...ADDR, email });
+    const hijackBody = await hijack.json().catch(() => ({}));
+    hijack.status === 409 && hijackBody?.error?.code === "EMAIL_HAS_ACCOUNT"
+      ? pass("ضيفٌ ببريد حسابٍ مسجَّل ⇒ EMAIL_HAS_ACCOUNT")
+      : fail(
+          `ضيفٌ ببريد حسابٍ مسجَّل مرّ (${hijack.status}) — ` +
+            "وأثرُه أن طلبَه يدخل «طلباتي» عند صاحب الحساب، ويُفسد سجلَّ COD له."
+        );
+
+    // وشاهدٌ موجب: بريدٌ جديدٌ يمرّ — وإلا فالحارسُ يمنع الجميع
+    const cartFresh = await newCart();
+    const fresh = await post(`/store/carts/${cartFresh}/address`, {
+      ...ADDR,
+      email: `guest${Date.now()}@zadim.test`,
+    });
+    fresh.status === 200
+      ? pass("وبريدٌ جديدٌ يمرّ — الحارسُ يمنع الحالةَ وحدَها لا الجميع")
+      : fail(`ضيفٌ ببريدٍ جديدٍ رُفض (${fresh.status})`);
+
+    // ── ولا يُقبل `customer_id` من الجسم ────────────────────────
+    const cartSpoof = await newCart();
+    await post(`/store/carts/${cartSpoof}/address`, {
+      ...ADDR,
+      email: `spoof${Date.now()}@zadim.test`,
+      customer_id: customerId,
+    });
+    const spoofed = await (
+      await fetch(`${api}/store/carts/${cartSpoof}?fields=%2Bcustomer_id`, { headers: H })
+    ).json();
+    // العميلُ الضيفُ يُنشأ من البريد، والمهمُّ ألّا يكون **حسابَ غيره**
+    spoofed?.cart?.customer_id !== customerId
+      ? pass("و`customer_id` في الجسم لا يربط سلّةً بحساب غيرِ صاحبها")
+      : fail("سلّةٌ ارتبطت بحسابٍ عبر `customer_id` في الجسم");
+  } catch (e) {
+    fail(`سقطت فحوصُ الحساب: ${String(e.message).slice(0, 160)}`);
+  }
+}
+
 try {
   for (const loc of LOCALES)
   for (const [rawPath, label] of PAGES) {
@@ -683,6 +794,7 @@ try {
   }
 
   await buyOnce(ctx);
+  await accountChecks();
 } finally {
   await browser.close();
 }

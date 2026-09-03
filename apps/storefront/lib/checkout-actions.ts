@@ -1,6 +1,7 @@
 "use server"
 
 import { cookies } from "next/headers"
+import { readSession } from "@/lib/auth-actions"
 import {
   addShippingMethod,
   checkoutCart,
@@ -32,7 +33,10 @@ async function requireCartId(): Promise<string> {
  */
 export async function saveAddress(form: NationalAddressForm): Promise<SaveAddressResult> {
   const id = await requireCartId()
-  return setCartAddress(id, form)
+  // 🔴 الرمزُ يُمرَّر ولا يُمرَّر معرّفُ عميل: الخادمُ يشتقّ الهويّةَ منه
+  // بنفسه. ومعرّفٌ في الجسم يربط سلّةً بحساب غيرِ صاحبها.
+  const token = await readSession()
+  return setCartAddress(id, form, token)
 }
 
 export async function listShippingOptions(): Promise<ShippingOption[]> {

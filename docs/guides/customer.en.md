@@ -85,6 +85,27 @@ total, with nothing extra.
 
 ---
 
+## Your account
+
+You can buy **as a guest with no account** — that works fully. An account
+adds one thing: **your order history**.
+
+| | |
+|---|---|
+| Create account | `/en/account/register` — your name, email and a password |
+| Sign in | `/en/account/login` |
+| My account | `/en/account` — your details and **your orders** with each status |
+
+⚠️ **If your email already has an account here you cannot check out as a
+guest with it** — you'll be asked to sign in. The reason: the order would
+be filed into that account's history, and someone else's order must not
+land there.
+
+⚠️ Saved addresses aren't in the account yet; you enter them with each
+order. That changes later.
+
+---
+
 ## Checking out
 
 Three steps: **address**, then **shipping method**, then **review and
