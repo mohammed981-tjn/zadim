@@ -9,6 +9,7 @@ import { Price } from "@/components/price"
 import { PriceChangedPanel } from "@/components/checkout/price-changed-panel"
 import { OutOfStockPanel } from "@/components/checkout/out-of-stock-panel"
 import { listShippingOptions, requestQuote, saveAddress, selectShipping, confirmCheckout } from "@/lib/checkout-actions"
+import { saveAddress as saveAddressToAccount } from "@/lib/auth-actions"
 import { t, type Locale } from "@/lib/i18n"
 import type {
   Cart,
@@ -17,6 +18,7 @@ import type {
   PriceChangedLine,
   OutOfStockLine,
   QuotedTotals,
+  SavedAddress,
 } from "@/lib/medusa"
 
 type Step = "address" | "shipping" | "payment"
@@ -35,10 +37,21 @@ function newIdempotencyKey() {
 export function CheckoutFlow({
   cart,
   shippingOptions,
+  savedAddresses = [],
+  signedIn = false,
   locale,
 }: {
   cart: Cart
   shippingOptions: ShippingOption[]
+  /** عناوينُ الحساب — فارغةٌ للضيف **ولمن دخل ولم يحفظ بعد**. */
+  savedAddresses?: SavedAddress[]
+  /**
+   * 🔴 **يُمرَّر صراحةً ولا يُشتقّ من طول القائمة.** فارغةٌ تعني
+   * «ضيفٌ» أو «داخلٌ بلا عناوين» — وهما حالان مختلفتان: الثانيةُ هي
+   * بالضبط من يريد حفظَ **أوّل** عنوانٍ له، ولو اشتُقّت لما رأى الخانةَ
+   * أبداً فلا امتلأ دفترُه ولا رآها يوماً.
+   */
+  signedIn?: boolean
   locale: Locale
 }) {
   const router = useRouter()
@@ -69,6 +82,45 @@ export function CheckoutFlow({
 
   /** أخطاءُ الحقول كما يُعيدها الخادم — الحكمُ له لا للواجهة. */
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
+  /**
+   * العنوانُ المختارُ من الدفتر — أو `null` لعنوانٍ جديد.
+   *
+   * 🔴 **والاختيارُ يملأ الحقولَ ولا يستبدلها.** لو أُرسل المعرّفُ إلى
+   * الخادم بدل الحقول لصار للعنوان مصدران يفترقان: عنوانٌ يُحرَّر في
+   * «حسابي» بعد اختياره هنا يغيّر وجهةَ طلبٍ قيد الإتمام. والحقولُ
+   * المنسوخةُ لقطةٌ ثابتة، وهي ما يُفحص ويُخزَّن.
+   */
+  const [pickedId, setPickedId] = useState<string | null>(
+    savedAddresses.find((a) => a.is_default)?.id ?? savedAddresses[0]?.id ?? null,
+  )
+
+  /**
+   * حفظُ العنوان في الحساب — **غيرُ مؤشَّرٍ افتراضاً**.
+   *
+   * فحفظُ كلِّ عنوانٍ يُكتب يملأ دفترَ العميل بعناوينِ أصدقاءَ وهدايا
+   * أرسلها مرّةً، ثم يعجز عن تمييزها. والاختيارُ له لا لنا.
+   */
+  const [saveToAccount, setSaveToAccount] = useState(false)
+
+  /** نسخُ عنوانٍ محفوظٍ إلى الحقول — لقطةٌ لا إشارة. */
+  function pick(a: SavedAddress) {
+    setPickedId(a.id)
+    setFieldErrors({})
+    setAddress((prev) => ({
+      ...prev,
+      first_name: a.first_name,
+      last_name: a.last_name,
+      phone: a.phone,
+      building_number: a.building_number,
+      street: a.street,
+      district: a.district,
+      city: a.city,
+      postal_code: a.postal_code,
+      additional_number: a.additional_number,
+      short_address: a.short_address ?? "",
+    }))
+  }
 
   const [shippingOptionId, setShippingOptionId] = useState<string>(shippingOptions[0]?.id ?? "")
 
@@ -153,6 +205,29 @@ export function CheckoutFlow({
         setFieldErrors(Object.fromEntries(res.fields.map((f) => [f.field, f.message_ar])))
         return
       }
+
+      // ⚠️ **والحفظُ في الدفتر بعد حفظِ السلّة لا قبله، وسقوطُه لا
+      // يوقف الشراء.** فالعنوانُ وصل حيث يهمّ — إلى الطلب. ومنعُ
+      // عميلٍ من الشراء لأن دفترَ عناوينه امتلأ عقوبةٌ بلا ذنب.
+      if (saveToAccount) {
+        try {
+          await saveAddressToAccount({
+            first_name: address.first_name,
+            last_name: address.last_name,
+            phone: address.phone,
+            building_number: address.building_number,
+            street: address.street,
+            district: address.district,
+            city: address.city,
+            postal_code: address.postal_code,
+            additional_number: address.additional_number,
+            short_address: address.short_address || undefined,
+          })
+        } catch {
+          /* تجاهُلٌ مقصود — انظر أعلاه. */
+        }
+      }
+
       setStep("shipping")
     } catch {
       setError(t(locale, "checkout.addressFailed"))
@@ -233,6 +308,58 @@ export function CheckoutFlow({
               <h2 id="address-heading" className="text-lg font-bold">
                 {t(locale, "checkout.addressHeading")}
               </h2>
+
+              {/* دفترُ العناوين — لمن دخل وله عناوينُ محفوظة. ولا يُعرض
+                  للضيف: صندوقٌ فارغٌ عنوانُه «عناوين محفوظة» يجعله
+                  يبحث عمّا ليس له. */}
+              {savedAddresses.length > 0 ? (
+                <fieldset className="rounded-xl border border-border p-4">
+                  <legend className="px-2 text-sm font-medium">
+                    {t(locale, "account.savedAddresses")}
+                  </legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {savedAddresses.map((a) => (
+                      <label
+                        key={a.id}
+                        className={`flex cursor-pointer gap-3 rounded-lg border p-3 text-sm transition-colors ${
+                          pickedId === a.id ? "border-primary bg-primary/5" : "border-border"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="saved-address"
+                          className="mt-1 size-4 shrink-0 accent-[var(--primary)]"
+                          checked={pickedId === a.id}
+                          onChange={() => pick(a)}
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-medium">
+                            {a.first_name} {a.last_name}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {a.building_number} {a.street} — {a.district}, {a.city}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                    <label
+                      className={`flex cursor-pointer gap-3 rounded-lg border border-dashed p-3 text-sm transition-colors ${
+                        pickedId === null ? "border-primary bg-primary/5" : "border-border"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="saved-address"
+                        className="mt-1 size-4 shrink-0 accent-[var(--primary)]"
+                        checked={pickedId === null}
+                        onChange={() => setPickedId(null)}
+                      />
+                      <span className="font-medium">{t(locale, "account.newAddress")}</span>
+                    </label>
+                  </div>
+                </fieldset>
+              ) : null}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label={t(locale, "checkout.firstName")} value={address.first_name} error={fieldErrors.first_name} onChange={(v) => setAddress((a) => ({ ...a, first_name: v }))} />
                 <Field label={t(locale, "checkout.lastName")} value={address.last_name} error={fieldErrors.last_name} onChange={(v) => setAddress((a) => ({ ...a, last_name: v }))} />
@@ -250,6 +377,20 @@ export function CheckoutFlow({
                   <Field label={t(locale, "checkout.shortAddress")} value={address.short_address} error={fieldErrors.short_address} hint={t(locale, "checkout.shortAddressHint")} onChange={(v) => setAddress((a) => ({ ...a, short_address: v }))} />
                 </div>
               </div>
+              {/* الحفظُ خيارٌ صريحٌ لمن دخل — ولا يُعرض للضيف لأنه بلا
+                  حسابٍ يُحفظ فيه، وخانةٌ لا تفعل شيئاً أسوأُ من غيابها. */}
+              {signedIn ? (
+                <label className="flex items-center gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-[var(--primary)]"
+                    checked={saveToAccount}
+                    onChange={(e) => setSaveToAccount(e.target.checked)}
+                  />
+                  {t(locale, "account.saveToAccount")}
+                </label>
+              ) : null}
+
               <Button type="button" className="h-11 px-6" disabled={!addressFilled || pending} onClick={goToShipping}>
                 {pending ? t(locale, "checkout.savingAddress") : t(locale, "checkout.toShipping")}
               </Button>

@@ -385,6 +385,103 @@ async function accountChecks() {
     spoofed?.cart?.customer_id !== customerId
       ? pass("و`customer_id` في الجسم لا يربط سلّةً بحساب غيرِ صاحبها")
       : fail("سلّةٌ ارتبطت بحسابٍ عبر `customer_id` في الجسم");
+
+    // ── 📒 دفترُ العناوين ────────────────────────────────────────
+    console.log("\n== 📒 دفترُ العناوين ==");
+    const BOOK = "/store/customers/me/national-addresses";
+    const MINE = {
+      first_name: "صاحب",
+      last_name: "الحساب",
+      phone: "0501234567",
+      building_number: "2743",
+      street: "طريق الملك فهد",
+      district: "العليا",
+      city: "الرياض",
+      postal_code: "12212",
+      additional_number: "6889",
+    };
+
+    // 🔴 بلا رمزٍ: لا تُقرأ القائمةُ أصلاً — وإلا قرأ الغريبُ عناوينَ
+    // العملاء وهواتفَهم بنداءٍ واحد.
+    const anon = await fetch(`${api}${BOOK}`, { headers: H });
+    anon.status === 401
+      ? pass("بلا رمزِ جلسة: القائمةُ لا تُقرأ (401)")
+      : fail(`قائمةُ العناوين قُرئت بلا رمز (${anon.status}) — عناوينُ العملاء وهواتفُهم مكشوفة`);
+
+    const emptyRes = await fetch(`${api}${BOOK}`, {
+      headers: { ...H, authorization: `Bearer ${token}` },
+    });
+    const emptyBody = await emptyRes.json().catch(() => ({}));
+    (emptyBody?.addresses ?? []).length === 0
+      ? pass("وحسابٌ جديدٌ يبدأ بلا عناوين")
+      : fail("حسابٌ جديدٌ وُجد له عنوان");
+
+    const made = await post(BOOK, MINE, token);
+    const madeBody = await made.json().catch(() => ({}));
+    made.status === 201 && madeBody?.created === true && madeBody?.address?.id
+      ? pass("وحفظُ عنوانٍ ينجح (201)")
+      : fail(`حفظُ العنوان أخفق (${made.status})`);
+    const addressId = madeBody?.address?.id;
+
+    // أوّلُ عنوانٍ يصير الافتراضيَّ من نفسه.
+    const listed = await (
+      await fetch(`${api}${BOOK}`, { headers: { ...H, authorization: `Bearer ${token}` } })
+    ).json();
+    const one = (listed?.addresses ?? [])[0];
+    one?.district === "العليا" && one?.additional_number === "6889"
+      ? pass("ويُعاد **مهيكلاً** — الحيُّ والرقمُ الإضافيّ لا سطراً مركَّباً")
+      : fail(`العنوانُ لا يُعاد مهيكلاً: ${JSON.stringify(one ?? null).slice(0, 120)}`);
+    one?.is_default === true
+      ? pass("وأوّلُ عنوانٍ افتراضيٌّ من نفسه")
+      : fail("أوّلُ عنوانٍ لم يصر افتراضياً");
+
+    // 🔴 والتكرارُ الصامت لا يُنشأ: كلُّ إتمامٍ يمرّ بنفس النموذج.
+    const again = await post(BOOK, MINE, token);
+    const againBody = await again.json().catch(() => ({}));
+    againBody?.created === false && againBody?.address?.id === addressId
+      ? pass("وعنوانٌ مطابقٌ لا يُنشأ مرّتين — ولا يُردّ بخطأ")
+      : fail(`تكرارٌ صامتٌ أُنشئ: ${JSON.stringify(againBody?.created)}`);
+
+    // وشاهدٌ سالب: عنوانٌ ناقصٌ يُرفض — فالمحفوظُ الناقصُ أسوأُ من
+    // غياب الحفظ: يُختار من قائمةٍ ثم يُرفض الطلبُ عند آخر خطوة.
+    const bad = await post(BOOK, { ...MINE, postal_code: "123" }, token);
+    bad.status === 400
+      ? pass("وشاهدُه السالب: رمزٌ بريديٌّ من ثلاثة أرقام يُرفض")
+      : fail(`عنوانٌ ناقصٌ حُفظ (${bad.status})`);
+
+    // 🔴 وعنوانُ غيره لا يُحذف — ويُردّ ٤٠٤ لا ٤٠٣ كي لا يُخبَر
+    // المخمّنُ أن المعرّفَ صحيح.
+    const other = await post("/auth/customer/emailpass/register", {
+      email: `other${Date.now()}@zadim.test`,
+      password,
+    });
+    const otherReg = (await other.json())?.token;
+    await post("/store/customers", { email: `other${Date.now()}@zadim.test` }, otherReg);
+    const otherToken = (await (await post("/auth/token/refresh", {}, otherReg)).json())?.token;
+
+    const steal = await fetch(`${api}${BOOK}/${addressId}`, {
+      method: "DELETE",
+      headers: { ...H, authorization: `Bearer ${otherToken}` },
+    });
+    steal.status === 404
+      ? pass("وعنوانُ غيره لا يُحذف — و٤٠٤ لا ٤٠٣، فلا يُخبَر المخمّنُ أن المعرّفَ صحيح")
+      : fail(`عميلٌ آخرُ حذف عنوانَ غيره (${steal.status})`);
+
+    const stillThere = await (
+      await fetch(`${api}${BOOK}`, { headers: { ...H, authorization: `Bearer ${token}` } })
+    ).json();
+    (stillThere?.addresses ?? []).length === 1
+      ? pass("والعنوانُ باقٍ فعلاً بعد المحاولة — لا رفضٌ في الرد وحذفٌ في القاعدة")
+      : fail("العنوانُ اختفى رغم ردّ ٤٠٤");
+
+    // وصاحبُه يحذفه.
+    const gone = await fetch(`${api}${BOOK}/${addressId}`, {
+      method: "DELETE",
+      headers: { ...H, authorization: `Bearer ${token}` },
+    });
+    gone.status === 200
+      ? pass("وصاحبُه يحذفه (200) — الحارسُ يمنع الغريبَ لا المالك")
+      : fail(`صاحبُ العنوان لم يستطع حذفَه (${gone.status})`);
   } catch (e) {
     fail(`سقطت فحوصُ الحساب: ${String(e.message).slice(0, 160)}`);
   }

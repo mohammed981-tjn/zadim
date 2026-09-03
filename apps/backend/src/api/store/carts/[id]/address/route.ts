@@ -1,10 +1,14 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { updateCartWorkflow } from "@medusajs/medusa/core-flows";
 import {
   toMedusaAddress,
   validateNationalAddress,
 } from "../../../../../modules/checkout/national-address";
+import {
+  emailHasAccount,
+  identityFromToken,
+} from "../../../../../modules/checkout/identity";
 
 /**
  * `POST /store/carts/:id/address` — **السلكُ الذي كان مقطوعاً**.
@@ -83,29 +87,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // يُردّ من هناك لا من هنا.
   //
   // وغيابُ الرمز ليس خطأً: الشراءُ ضيفاً مسارٌ كاملُ الحقوق (بند ٨).
-  let customerId: string | null = null;
-  const bearer = String(req.headers["authorization"] ?? "");
-  if (bearer.toLowerCase().startsWith("bearer ")) {
-    try {
-      const base = process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000";
-      const meRes = await fetch(`${base}/store/customers/me`, {
-        headers: {
-          authorization: bearer,
-          "x-publishable-api-key": String(req.headers["x-publishable-api-key"] ?? ""),
-        },
-      });
-      if (meRes.ok) {
-        const me = (await meRes.json()) as any;
-        customerId = me?.customer?.id ?? null;
-        // بريدُ الحساب يسبق ما كُتب في النموذج: الطلبُ يخصّ الحساب،
-        // وبريدان لعميلٍ واحدٍ يجعلان «طلباتي» ناقصة.
-        if (me?.customer?.email) email = String(me.customer.email).toLowerCase();
-      }
-    } catch {
-      // تعذّرُ التعرّف لا يمنع الشراء — يمضي ضيفاً.
-      customerId = null;
-    }
-  }
+  const identity = await identityFromToken(req);
+  const customerId = identity?.customer_id ?? null;
+  // بريدُ الحساب يسبق ما كُتب في النموذج: الطلبُ يخصّ الحساب، وبريدان
+  // لعميلٍ واحدٍ يجعلان «طلباتي» ناقصة.
+  if (identity?.email) email = identity.email;
 
   // ── 🔴 بريدُ حسابٍ مسجَّل لا يُقبل من ضيف ──────────────────────
   //
@@ -124,12 +110,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   //
   // ⚠️ ولا يقع هذا على من دخل فعلاً: بريدُه يأتي من رمزه لا من نموذجه.
   if (!customerId && email) {
-    const customerModule: any = req.scope.resolve(Modules.CUSTOMER);
-    const [registered] = await customerModule.listCustomers(
-      { email, has_account: true },
-      { take: 1 }
-    );
-    if (registered) {
+    if (await emailHasAccount(req, email)) {
       return res.status(409).json({
         error: {
           code: "EMAIL_HAS_ACCOUNT",

@@ -5,7 +5,8 @@ import { Package } from "lucide-react"
 import { Container } from "@/components/container"
 import { Price } from "@/components/price"
 import { SignOutButton } from "@/components/account/sign-out-button"
-import { currentCustomer, myOrders } from "@/lib/auth-actions"
+import { AddressBook } from "@/components/account/address-book"
+import { currentCustomer, myOrders, savedAddresses } from "@/lib/auth-actions"
 import { digits } from "@/lib/money"
 import { t, type Locale } from "@/lib/i18n"
 
@@ -49,7 +50,7 @@ export default async function AccountPage({ params }: { params: Promise<{ locale
   const customer = await currentCustomer()
   if (!customer) redirect(`/${locale}/account/login`)
 
-  const orders = await myOrders()
+  const [orders, addresses] = await Promise.all([myOrders(), savedAddresses()])
   const name = [customer.first_name, customer.last_name].filter(Boolean).join(" ").trim()
 
   return (
@@ -64,6 +65,13 @@ export default async function AccountPage({ params }: { params: Promise<{ locale
         </div>
         <SignOutButton locale={locale} />
       </div>
+
+      <section aria-labelledby="addresses-heading" className="mb-12">
+        <h2 id="addresses-heading" className="mb-4 text-lg font-bold">
+          {t(locale, "account.myAddresses")}
+        </h2>
+        <AddressBook locale={locale} addresses={addresses} />
+      </section>
 
       <section aria-labelledby="orders-heading">
         <h2 id="orders-heading" className="mb-4 text-lg font-bold">

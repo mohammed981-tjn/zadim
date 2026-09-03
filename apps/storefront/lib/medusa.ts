@@ -642,6 +642,82 @@ export async function setCartAddress(
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Saved addresses                                                     */
+/* ------------------------------------------------------------------ */
+
+/** عنوانٌ محفوظٌ في الحساب — نفسُ حقول العنوان الوطنيّ ومعها معرّفُه. */
+export interface SavedAddress extends NationalAddressForm {
+  id: string
+  is_default: boolean
+}
+
+/**
+ * عناوينُ العميل المحفوظة.
+ *
+ * ⚠️ **والخادمُ لا يُعيد إلا المهيكلَ الكامل**: عناوينُ كُتبت من لوحة
+ * Medusa مباشرةً تحمل `address_1` بلا حقولنا، وعرضُها في قائمةِ اختيارٍ
+ * يعني أن يختارها العميلُ فيُرفض طلبُه بعد خطوتين بسببٍ لا يراه.
+ */
+export async function myAddresses(token: string): Promise<SavedAddress[]> {
+  try {
+    const data = await medusaAuth<{ addresses: SavedAddress[] }>(
+      "/store/customers/me/national-addresses",
+      null,
+      token,
+    )
+    return data.addresses ?? []
+  } catch {
+    // قائمةٌ فارغةٌ لا تُسقط الشاشة: من لا عناوينَ له يكتب عنوانَه،
+    // وهو نفسُ ما يفعله من تعذّرت قراءةُ عناوينه.
+    return []
+  }
+}
+
+export type SaveAddressBookResult =
+  | { ok: true; created: boolean }
+  | { ok: false; message: string; fields: AddressFieldError[] }
+
+export async function saveAddressToBook(
+  form: NationalAddressForm,
+  token: string,
+): Promise<SaveAddressBookResult> {
+  try {
+    const data = await medusaFetch<{ created: boolean }>(
+      "/store/customers/me/national-addresses",
+      {
+        method: "POST",
+        body: JSON.stringify(form),
+        cache: "no-store",
+        headers: { authorization: `Bearer ${token}` },
+      },
+    )
+    return { ok: true, created: Boolean(data.created) }
+  } catch (err) {
+    if (err instanceof MedusaError) {
+      return {
+        ok: false,
+        message: err.message,
+        fields: (err.details?.fields ?? []) as AddressFieldError[],
+      }
+    }
+    return { ok: false, message: "تعذّر حفظ العنوان.", fields: [] }
+  }
+}
+
+export async function deleteSavedAddress(id: string, token: string): Promise<boolean> {
+  try {
+    await medusaFetch(`/store/customers/me/national-addresses/${id}`, {
+      method: "DELETE",
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function quoteCart(cartId: string): Promise<Quote> {
   const data = await medusaFetch<{ quote: Quote }>(`/store/carts/${cartId}/quote`, {
     method: "POST",

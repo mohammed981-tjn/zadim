@@ -2,7 +2,18 @@
 
 import { cookies } from "next/headers"
 import { revalidatePath } from "next/cache"
-import { MedusaError, medusaAuth, type Customer, type OrderSummary } from "@/lib/medusa"
+import {
+  MedusaError,
+  deleteSavedAddress,
+  medusaAuth,
+  myAddresses,
+  saveAddressToBook,
+  type Customer,
+  type NationalAddressForm,
+  type OrderSummary,
+  type SaveAddressBookResult,
+  type SavedAddress,
+} from "@/lib/medusa"
 
 /**
  * حسابُ العميل — التسجيلُ والدخولُ والجلسة (بند ٢١).
@@ -171,4 +182,45 @@ export async function myOrders(): Promise<OrderSummary[]> {
   } catch {
     return []
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* دفترُ العناوين                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * عناوينُ العميل المحفوظة — أو قائمةٌ فارغةٌ لمن ليس داخلاً.
+ *
+ * ولا تُرمى للضيف: شاشةُ الإتمام تناديها في كل مرّة، والضيفُ مسارٌ
+ * كاملُ الحقوق لا حالةَ خطأ (بند ٨).
+ */
+export async function savedAddresses(): Promise<SavedAddress[]> {
+  const token = await readSession()
+  if (!token) return []
+  return myAddresses(token)
+}
+
+/**
+ * حفظُ عنوانٍ في الحساب.
+ *
+ * ⚠️ **ولا يُنادى إلا بطلبِ العميل صراحةً.** حفظُ كلِّ عنوانٍ يُكتب في
+ * الإتمام تلقائياً يملأ دفترَه بعناوينِ أصدقاءَ وهدايا أرسلها مرّةً —
+ * ثم يعجز عن تمييزها. والخانةُ في النموذج غيرُ مؤشَّرةٍ افتراضاً.
+ */
+export async function saveAddress(form: NationalAddressForm): Promise<SaveAddressBookResult> {
+  const token = await readSession()
+  if (!token) {
+    return { ok: false, message: "سجّلِ الدخولَ أوّلاً.", fields: [] }
+  }
+  const res = await saveAddressToBook(form, token)
+  if (res.ok) revalidatePath("/", "layout")
+  return res
+}
+
+export async function removeAddress(id: string): Promise<boolean> {
+  const token = await readSession()
+  if (!token) return false
+  const ok = await deleteSavedAddress(id, token)
+  if (ok) revalidatePath("/", "layout")
+  return ok
 }

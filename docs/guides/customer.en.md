@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-03 — matches the national-address batch.
+> Last updated: 2026-09-03 — matches the address-book batch.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -88,21 +88,41 @@ total, with nothing extra.
 ## Your account
 
 You can buy **as a guest with no account** — that works fully. An account
-adds one thing: **your order history**.
+adds two things: **your order history** and **your address book**.
 
 | | |
 |---|---|
 | Create account | `/en/account/register` — your name, email and a password |
 | Sign in | `/en/account/login` |
-| My account | `/en/account` — your details and **your orders** with each status |
+| My account | `/en/account` — your details, **your addresses** and **your orders** with each status |
 
 ⚠️ **If your email already has an account here you cannot check out as a
 guest with it** — you'll be asked to sign in. The reason: the order would
 be filed into that account's history, and someone else's order must not
 land there.
 
-⚠️ Saved addresses aren't in the account yet; you enter them with each
-order. That changes later.
+### Your addresses
+
+At checkout there's a **"Save this address to my account"** box — and it
+is **unticked** unless you tick it. The reason: you might be sending a
+gift to a friend's address, and saving every address you type fills your
+book with addresses you can't place.
+
+Next time, your saved addresses appear above the form, so you pick one
+with a click — or pick **"New address"** and type a different one.
+
+You can delete any address from `/en/account`; you'll be asked to confirm.
+
+⚠️ **An incomplete address is not saved**: saved addresses are validated
+exactly as strictly as ones typed at checkout. A half-saved address would
+mean picking it confidently, then having your order refused at the last
+step.
+
+⚠️ The limit is ten addresses. Typing an address identical to a saved one
+does not create a second copy.
+
+⚠️ **Your map location isn't saved yet** — an address is text, not a pin.
+That changes later.
 
 ---
 

@@ -4,6 +4,7 @@ import { Container } from "@/components/container"
 import { CheckoutFlow } from "@/components/checkout/checkout-flow"
 import { ErrorState } from "@/components/states"
 import { loadCart } from "@/lib/cart-actions"
+import { isSignedIn, savedAddresses } from "@/lib/auth-actions"
 import { getShippingOptions, type ShippingOption } from "@/lib/medusa"
 import { t, type Locale } from "@/lib/i18n"
 
@@ -50,10 +51,20 @@ export default async function CheckoutPage({
     shippingOptions = []
   }
 
+  // عناوينُ من دخل — وقائمةٌ فارغةٌ للضيف. والضيفُ مسارٌ كاملُ الحقوق
+  // (بند ٨)، فلا شيءَ هنا يشترط حساباً.
+  const [addresses, signedIn] = await Promise.all([savedAddresses(), isSignedIn()])
+
   return (
     <Container className="py-8 md:py-12">
       <h1 className="mb-8 text-2xl font-bold md:text-3xl">{t(locale, "checkout.title")}</h1>
-      <CheckoutFlow cart={cart} shippingOptions={shippingOptions} locale={locale} />
+      <CheckoutFlow
+        cart={cart}
+        shippingOptions={shippingOptions}
+        savedAddresses={addresses}
+        signedIn={signedIn}
+        locale={locale}
+      />
     </Container>
   )
 }
