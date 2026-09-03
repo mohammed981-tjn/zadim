@@ -9,7 +9,7 @@ import type {
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { ACCESS_MODULE } from "../modules/access";
 import type AccessModuleService from "../modules/access/service";
-import { isExempt, readField, ruleFor } from "../modules/access/permission-map";
+import { isExempt, readCount, readField, ruleFor } from "../modules/access/permission-map";
 import { rateLimit } from "../modules/access/rate-limit";
 import { overlayTranslations } from "../modules/catalog/overlay";
 
@@ -101,11 +101,47 @@ async function requirePermission(
 
   const body = bodyOf(req);
 
+  // ── 🔴 سقفٌ معلَنٌ لا يُقرأ له مبلغٌ = سقفٌ خامل ──────────────────
+  //
+  // `can()` يتخطّى فحصَ السقف كلَّه حين `amount == null`. فقاعدةٌ تعلن
+  // `amountField` ثم لا يُقرأ لها مبلغٌ **تمرّ بلا سقف** — والباب الذي
+  // بُنيت المصفوفةُ كلُّها لإغلاقه يبقى مفتوحاً بلا خطأٍ ولا سطرِ سجلّ.
+  //
+  // وهذا يقع في حالين: جسمٌ لم يُحلَّل بعدُ لحظةَ عمل الوسيط، وحقلٌ
+  // بقيمةٍ ليست مبلغاً. والاثنان **يُرفضان**: المالُ يفشل مغلقاً.
+  // (وهو عكسُ `rate-limit.ts` عمداً — هناك مخزنُ العدّاد هو القاعدةُ
+  // نفسُها فلا شيءَ يُسرق حين تسكت؛ وهنا الرفضُ يمنع تحويلَ مال.)
+  //
+  // ⚠️ والعدُّ يختلف: ذراعٌ غائبةٌ من دفعةٍ ليست خطأً (دفعةُ إنشاءٍ بلا
+  // `update`)، فغيابُ كلِّ الحقول يُقرأ **صفراً** — ولا شيءَ في دفعةٍ
+  // فارغةٍ يتجاوز حدّاً. والحمايةُ من «ذراعٍ لا تُعدّ» في `readCount`:
+  // تُقرأ الأذرعُ كلُّها ويؤخذ أكبرُها.
+  const declaresLimit = Boolean(rule.amountField || rule.countFields?.length);
+  if (declaresLimit && (body === null || body === undefined || typeof body !== "object")) {
+    return res.status(400).json({
+      error: {
+        code: "LIMIT_INPUT_UNREADABLE",
+        message_ar:
+          "هذا المسار محكومٌ بسقفٍ، ولم يصل جسمُ طلبٍ يُقرأ منه. أرسِلْه بصيغة JSON.",
+      },
+    });
+  }
+
+  const amount = readField(body, rule.amountField);
+  if (rule.amountField && amount === undefined) {
+    return res.status(400).json({
+      error: {
+        code: "AMOUNT_UNREADABLE",
+        message_ar: `هذا المسار محكومٌ بسقفٍ ماليّ، ولم يُقرأ «${rule.amountField}» مبلغاً صحيحاً بالهللات.`,
+      },
+    });
+  }
+
   const decision = await access.can({
     user_id: actorId,
     permission: rule.permission,
-    amount: readField(body, rule.amountField),
-    count: readField(body, rule.countField),
+    amount,
+    count: rule.countFields?.length ? readCount(body, rule.countFields) ?? 0 : undefined,
     vendor_id: (req.headers["x-vendor-id"] as string) ?? null,
   });
 

@@ -22,16 +22,26 @@ export type RouteRule = {
   /**
    * من أين يُقرأ المبلغ في الجسم حين يكون للصلاحية سقفٌ ماليّ.
    * غيابُه يعني «لا سقفَ يُفحص لهذا المسار».
+   *
+   * 🔴 ووجودُه يعني أن المبلغ **لازمٌ**: مسارٌ يعلن سقفاً ولا يُقرأ له
+   * مبلغٌ يُرفض في `middlewares.ts` ولا يمرّ بلا سقف. انظر تعليقَه هناك.
    */
   amountField?: string;
-  /** من أين يُقرأ العدد (دفعاتُ التعديل مثلاً) */
-  countField?: string;
+  /**
+   * من أين تُقرأ الأعدادُ (دفعاتُ التعديل مثلاً) — **قائمةٌ لا حقلٌ واحد**.
+   *
+   * وكان حقلاً واحداً (`update.length`)، وفيه فجوةٌ: دفعةُ منتجاتٍ
+   * بـ`create` من خمسة آلاف صنفٍ لا `update` فيها **تمرّ بلا عدٍّ** —
+   * فالحقلُ المعلَن غائبٌ عن الجسم، والسقفُ لا يُفحص. والحكمُ يقع على
+   * **أكبرِ** ما يُقرأ من هذه الحقول، فالدفعةُ تُقاس بأثقلِ أذرعها.
+   */
+  countFields?: string[];
 };
 
 export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // ── المنتجات ────────────────────────────────────────────────────
   // الأخصُّ أولاً — أوّلُ مطابقةٍ تفوز.
-  { pattern: /^\/products\/batch$/, methods: ["POST"], permission: "products.bulk_update", countField: "update.length" },
+  { pattern: /^\/products\/batch$/, methods: ["POST"], permission: "products.bulk_update", countFields: ["create.length", "update.length", "delete.length"] },
   { pattern: /^\/products(\/|$)/, methods: ["GET"], permission: "products.read" },
   { pattern: /^\/products(\/[^/]+)?$/, methods: ["POST", "PUT", "PATCH"], permission: "products.write" },
   { pattern: /^\/products\/[^/]+$/, methods: ["DELETE"], permission: "products.delete" },
@@ -151,7 +161,7 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // والدفعةُ تحت **نفس سقف** `products.bulk_update` من المرحلة ١ — لا
   // رقمَ ثانٍ في مسارٍ ثانٍ يفترق عنه يومَ يرفع المالكُ السقف.
   { pattern: /^\/bulk\/[^/]+\/revert$/, methods: ["POST"], permission: "products.bulk_update" },
-  { pattern: /^\/bulk\/product-price$/, methods: ["POST"], permission: "products.bulk_update", countField: "variant_ids.length" },
+  { pattern: /^\/bulk\/product-price$/, methods: ["POST"], permission: "products.bulk_update", countFields: ["variant_ids.length"] },
   { pattern: /^\/bulk(\/|$)/, methods: ["GET"], permission: "products.read" },
 
   // ── وحدة cms ────────────────────────────────────────────────────
@@ -258,7 +268,22 @@ export function isExempt(path: string): boolean {
   return EXEMPT.some((p) => p.test(path));
 }
 
-/** يقرأ `update.length` و`amount` ونحوَهما من جسم الطلب. */
+/**
+ * يقرأ `update.length` و`amount` ونحوَهما من جسم الطلب.
+ *
+ * ── 🔴 ولماذا يقبل النصَّ الرقميّ ────────────────────────────────
+ *
+ * كان الشرطُ `typeof cur === "number"` وحدَه، وفيه بابٌ مفتوح: مبالغُ
+ * Medusa تعبر واجهاتِه بـ`BigNumberInput` — **وهو يقبل النصّ**. فجسمٌ
+ * فيه `{"amount": "99999900"}` كان يُعيد `undefined`، ويتخطّى `can()`
+ * فحصَ السقف كلَّه (`check.amount == null`)، فيمرّ استردادٌ فوق سقف
+ * الدور **صامتاً**. والمبلغُ مبلغٌ سواءٌ كُتب رقماً أو نصّاً؛ والذي لا
+ * يجوز أن يمرّ هو ما ليس مبلغاً أصلاً.
+ *
+ * والقبولُ بشرطِ الهللات الصحيحة (`ADR-008`): `^\d+$` لا كسورَ ولا
+ * إشارة. ونصٌّ بكسرٍ يُردّ `undefined` — ثم يرفضه الوسيط، ولا يُقرَّب
+ * صامتاً.
+ */
 export function readField(body: unknown, field?: string): number | undefined {
   if (!field || !body || typeof body !== "object") return undefined;
   let cur: any = body;
@@ -266,5 +291,25 @@ export function readField(body: unknown, field?: string): number | undefined {
     if (cur == null) return undefined;
     cur = part === "length" && Array.isArray(cur) ? cur.length : cur[part];
   }
-  return typeof cur === "number" ? cur : undefined;
+  if (typeof cur === "number") return Number.isFinite(cur) ? cur : undefined;
+  if (typeof cur === "string" && /^\d+$/.test(cur.trim())) return Number(cur.trim());
+  return undefined;
+}
+
+/**
+ * أكبرُ عددٍ يُقرأ من حقولِ القاعدة — لا أوّلُ ما وُجد.
+ *
+ * فدفعةٌ فيها `create` بخمسة آلاف و`update` بواحدٍ **دفعةُ خمسةِ آلاف**،
+ * ومن يقيسها بذراعٍ واحدةٍ يقيس أخفَّها. و`undefined` تعني «لم يُقرأ
+ * شيء» — ويقرّر الوسيطُ ماذا يفعل بها، لا هذه الدالّة.
+ */
+export function readCount(body: unknown, fields?: string[]): number | undefined {
+  if (!fields?.length) return undefined;
+  let max: number | undefined;
+  for (const f of fields) {
+    const v = readField(body, f);
+    if (v === undefined) continue;
+    max = max === undefined || v > max ? v : max;
+  }
+  return max;
 }

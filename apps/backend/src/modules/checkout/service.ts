@@ -88,9 +88,17 @@ class CheckoutModuleService extends MedusaService({ CartQuote, CheckoutAttempt }
         { idempotency_key: key, cart_id: cartId, status: "in_progress" },
       ]);
       return { fresh: true, attempt };
-    } catch {
+    } catch (e) {
       // اصطدم بالقيد ⇒ سبقنا أحدٌ بجزءٍ من الثانية.
       const [attempt] = await this.listCheckoutAttempts({ idempotency_key: key });
+
+      // ⚠️ **وإن لم يكن تصادماً فلا محاولةَ تُعاد.** كان `catch` يبتلع
+      // كلَّ خطأ ثم يُعيد `attempt` غيرَ معرَّفة، فيسقط المُنادي على
+      // `attempt.cart_id` بـ`TypeError` — خمسمئةٌ غامضةٌ في **أخطر
+      // نداءٍ في النظام**، ورسالتُها تشير إلى سطرٍ لا علاقةَ له بالسبب.
+      // فالسببُ الأصليّ يُرمى كما هو: عطلُ قاعدةٍ يُقرأ عطلَ قاعدة.
+      if (!attempt) throw e;
+
       return { fresh: false, attempt };
     }
   }

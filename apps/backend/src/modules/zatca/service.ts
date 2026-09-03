@@ -2,7 +2,7 @@ import { MedusaService } from "@medusajs/framework/utils";
 import { randomUUID } from "crypto";
 import { ZatcaInvoice, ZatcaSetting } from "./models";
 import { buildQrTlv } from "./tlv";
-import { genesisHash, invoiceHash, verifyChain, type ChainRow } from "./chain";
+import { FIRST_SEQUENCE, genesisHash, invoiceHash, verifyChain, type ChainRow } from "./chain";
 
 export type IssueInput = {
   order_id: string;
@@ -106,7 +106,9 @@ class ZatcaModuleService extends MedusaService({ ZatcaSetting, ZatcaInvoice }) {
         .orderBy("sequence", "desc")
         .first();
 
-      const sequence = last ? Number(last.sequence) + 1 : 1;
+      // رقمُ البداية من `chain.ts` لا رقمٌ مكتوبٌ هنا: الفاحصُ يقارن به،
+      // ورقمان في موضعين يفترقان يوماً فيُصدر الخادمُ ما يرفضه فاحصُه.
+      const sequence = last ? Number(last.sequence) + 1 : FIRST_SEQUENCE;
       const previous_hash = last ? String(last.invoice_hash) : genesisHash();
 
       const payload = {

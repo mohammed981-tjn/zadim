@@ -6,9 +6,18 @@
 # لأن القاعدةَ **غيرُ موجودةٍ وقتَ البناء**: الصورةُ تُبنى في مكانٍ
 # لا يرى قاعدةَ الإنتاج. فالهجرةُ تقع عند الإقلاع، حيث الاتصالُ قائم.
 #
-# ⚠️ وهذا يفترض **نسخةً واحدة**. ويوم يصير النشرُ نسختين فأكثر تُنقل
-# الهجرةُ إلى خطوةِ ما قبل النشر (`preDeployCommand` في Railway) —
-# وإلا تسابقت النسخُ على نفس الهجرة.
+# ── 🔴 ولم تعُد تفترض نسخةً واحدة — وقد كلّف ذلك أوّلَ نشرة ────────
+#
+# كان مكتوباً هنا: «هذا يفترض نسخةً واحدة… وإلا تسابقت النسخُ على نفس
+# الهجرة». ووقع بالضبط في أوّل نشرةٍ حقيقية: إقلاعان متزامنان قرآ جدولَ
+# الهجرات فارغاً وبدآ معاً، فخرج خليطٌ من «already exists» و«does not
+# exist» ينتهي بـ«cannot alter type of a column used in a trigger
+# definition» — مُطلِقُنا على `order.status` أنشأته نسخةٌ وصلت هجراتِ
+# ٢٠٢٦، بينما الأخرى ما زالت في هجرة Medusa لعام ٢٠٢٤ تحاول تغييرَ
+# نفسِ العمود.
+#
+# فصارت الهجرةُ تحت **قفلٍ استشاريّ** (`scripts/migrate-once.mjs`):
+# الثانيةُ تنتظر الأولى ثم تجد كلَّ شيءٍ مسجَّلاً فلا تفعل شيئاً.
 set -e
 
 # 🔴 خطوةٌ لا يُستغنى عنها: **Medusa لا يُنشئ المخطَّط، يفترض وجودَه.**
@@ -33,7 +42,7 @@ c.connect()
 '
 
 echo "[zadim] تشغيل الهجرات…"
-npx medusa db:migrate
+node ./src/scripts/migrate-once.js
 
 # ── البذر: لماذا هنا لا نقلاً لنسخةٍ من قاعدةٍ أخرى ─────────────────
 #
@@ -71,6 +80,13 @@ fi
 node -e '
 const { Client } = require("pg");
 const schema = process.env.DATABASE_SCHEMA || "zadim";
+// نفسُ فحصِ الشكل أعلاه — والاسمُ يُركَّب هنا في `search_path` كما
+// يُركَّب هناك في `create schema`. وفحصٌ في أحد الموضعين يُعلّم القارئ
+// أن التركيب مأمونٌ في هذا الملفّ، فيُنسخ السطرُ ثالثاً بلا فحص.
+if (!/^[a-z_][a-z0-9_]*$/i.test(schema)) {
+  console.error(`[zadim] اسمُ مخطَّطٍ غيرُ صالح: ${schema}`);
+  process.exit(1);
+}
 const c = new Client({ connectionString: process.env.DATABASE_URL });
 c.connect()
   .then(() => c.query(`set search_path to "${schema}"; select token from api_key where type = $$publishable$$ and revoked_at is null limit 1`))

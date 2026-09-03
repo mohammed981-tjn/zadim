@@ -9,6 +9,8 @@ import { CHECKOUT_MODULE } from "./index";
 import type CheckoutModuleService from "./service";
 import { WAREHOUSE_MODULE } from "../warehouse";
 import type WarehouseModuleService from "../warehouse/service";
+import { PAYMENTS_MODULE } from "../payments";
+import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
 import { cartLines, currentPrices, readCart } from "./cart-reader";
 
@@ -26,6 +28,17 @@ import { cartLines, currentPrices, readCart } from "./cart-reader";
  */
 
 export type Outcome = { status: number; body: Record<string, unknown> };
+
+/**
+ * مُعرِّفُ مزوّد الدفع عند الاستلام.
+ *
+ * وشكلُه `pp_<identifier>_<id>` اصطلاحُ Medusa: `identifier` من
+ * `cod-payment/service.ts` و`id` من `medusa-config.ts`. فتغييرُ أيّهما
+ * يغيّر هذا — ولذلك يُكتب ثابتاً واحداً هنا، ويقابله فحصٌ في
+ * `verify-payments.ts` يتأكّد أن المزوّدَ بهذا الاسم **مسجَّلٌ فعلاً**
+ * في الحاوية. وإلا فأوّلُ ما يكشف الخطأ عميلٌ لا يستطيع الشراء.
+ */
+export const COD_PROVIDER_ID = "pp_cod_cod";
 
 const err = (
   status: number,
@@ -249,6 +262,35 @@ export async function runCheckout(
     );
   }
 
+  // ── ٣ب) أهليّةُ الدفع عند الاستلام — **قبل الحجز وقبل الطلب** ──
+  //
+  // 🔴 هذه شرطُ الخطوة ٧ (جلسةُ الدفع) مسحوباً إلى هنا عمداً — والسبعةُ
+  // كما هي في `04-api-contract.md`. ولو تُرك في مكانه لحجزنا المخزونَ
+  // ثم رفضنا، فيخرج الصنفُ من السوق لعميلٍ لم يشترِ.
+  //
+  // ⚠️ **و COD هو وسيلةُ الدفع الوحيدة اليوم** (`medusa-config.ts`:
+  // مزوّدٌ واحد). فرفضُ الأهليّة رفضٌ للطلب كلِّه لا تحويلٌ إلى وسيلةٍ
+  // أخرى — وهذا صحيحٌ لا نقص: ادّعاءُ بدائلَ لا وجودَ لها أسوأ. ويوم
+  // يصل مزوّدٌ ثانٍ يصير هذا اختياراً لا بوّابة.
+  //
+  // وكانت هذه الفحوصُ كلُّها مبنيّةً ومُختبَرةً في المرحلة ٦ (`payments/cod.ts`)
+  // **ولا يناديها مسارُ إنتاجٍ واحد**: البوّابةُ تنادي الدالّةَ مباشرةً
+  // فتمرّ خضراء، والمتجرُ لا يمرّ بها. فحدُّ المالك ورفضاتُه كانا حبراً.
+  const payments = scope.resolve(PAYMENTS_MODULE) as PaymentsModuleService;
+  const cod = await payments.codDecision({
+    order_total: totals.total,
+    city: cart.shipping_address?.city ?? null,
+    phone: cart.shipping_address?.phone ?? null,
+    email: cart.email ?? null,
+  });
+
+  if (!cod.eligible) {
+    return finish(
+      err(409, cod.code, cod.reason_ar),
+      cod.code
+    );
+  }
+
   // ── ٤) المخزون: فحصٌ مسبقٌ واختيارُ المستودع ─────────────────
   const plan = await allocationFor(scope, warehouse, cart, lines);
   if (plan && !plan.fully_allocatable) {
@@ -402,11 +444,19 @@ async function allocationFor(
 }
 
 /**
- * جلسةُ دفعٍ إن لم تكن — بمزوّد النظام.
+ * جلسةُ دفعٍ إن لم تكن — **بمزوّد الدفع عند الاستلام**.
  *
- * ⚠️ **مؤقّتٌ حتى المرحلة ٦**: `pp_system_default` يوافق على كل شيءٍ
- * بلا تحصيلٍ حقيقيّ. ومكتوبٌ هنا لا في رسالةِ التزامٍ تُنسى: من يقرأ
- * هذا الملفّ يجب أن يعرف أن «تمّ الدفع» اليوم تعني «سُجّل» لا «حُصِّل».
+ * ── وكان `pp_system_default` — وهو خطأٌ عاش بعد سببه ─────────────
+ *
+ * كُتب «مؤقّتٌ حتى المرحلة ٦»، ثم اجتازت المرحلةُ ٦ وبقي السطر. فبقي
+ * كلُّ طلبٍ يُتمّ بمزوّدٍ **يوافق على كلّ شيءٍ بلا تحصيل**، ومزوّدُ COD
+ * المبنيُّ في تلك المرحلة لا يصله نداء. ومعه سقط ما يحرسه:
+ * `money_held: false` التي تمنع حسابَ الموعود محصَّلاً، وحارسُ
+ * «التحصيلُ بعد الشحن» في القاعدة الذي لا يُنادى إن لم يُنادَ المزوّد.
+ *
+ * ⚠️ **و«تمّ الطلب» عند COD تعني «التزم العميل»** لا «حُصِّل المال»:
+ * المالُ يُقيَّد عند التسليم (`cod-payment/service.ts`). وهذا فرقٌ يجب
+ * أن يعرفه من يقرأ تقريراً مالياً، ولذلك تُميَّز بياناتُ الجلسة.
  */
 async function ensurePayment(scope: any, cart: any) {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY);
@@ -426,6 +476,6 @@ async function ensurePayment(scope: any, cart: any) {
       .result.id;
 
   await createPaymentSessionsWorkflow(scope).run({
-    input: { payment_collection_id: collectionId, provider_id: "pp_system_default" },
+    input: { payment_collection_id: collectionId, provider_id: COD_PROVIDER_ID },
   });
 }
