@@ -52,6 +52,8 @@
 | ٩ | [`docs/09-spec-coverage.md`](docs/09-spec-coverage.md) | **جدول التغطية**: بنود المواصفة الستّون × أين عولج كلٌّ منها — وما أُجِّل مكتوبٌ بسببه، لا مسكوتٌ عنه |
 | ١٢ | [`docs/12-export-corridor.md`](docs/12-export-corridor.md) | **ممرّ الصادر** — النطاق الثاني عشر: تصديرُ سلعةٍ سودانيةٍ موثَّقة. قواعدُ الامتثال بياناتٌ مؤرَّخة، **والإرساليةُ تجمّدها كما يجمّد الطلبُ سعرَه** |
 | ١٣ | [`docs/13-export-corridor-schema.sql`](docs/13-export-corridor-schema.sql) | مخطّطُ الممرّ — يُطبَّق بعد ٠٢، **ويُنشَأ فعلاً**. البوّابة: `./scripts/verify-corridor.sh` |
+| ١٤ | [`docs/14-bridge-contract.md`](docs/14-bridge-contract.md) | **جسر سودجري ← زاديم** — وثيقةٌ في اتجاهٍ واحد، لا قاعدتان موصولتان. والجسرُ **لا يصنع هويّة**: مصدِّرٌ لا نعرفه يُرفض |
+| ١٥ | [`docs/15-bridge-schema.sql`](docs/15-bridge-schema.sql) | دفترُ الوارد ودالّةُ الإدماج. البوّابة: `./scripts/verify-bridge.sh` |
 
 ## القواعد التي لا تُكسر
 
