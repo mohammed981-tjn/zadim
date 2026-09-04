@@ -1,14 +1,16 @@
 "use server"
 
 import { cookies } from "next/headers"
+import { readSession } from "@/lib/auth-actions"
 import {
   addShippingMethod,
   checkoutCart,
-  getShippingOptions,
   quoteCart,
+  setCartAddress,
   type CheckoutResult,
+  type NationalAddressForm,
   type Quote,
-  type ShippingOption,
+  type SaveAddressResult,
 } from "@/lib/medusa"
 
 const COOKIE = "zadim_cart_id"
@@ -20,10 +22,18 @@ async function requireCartId(): Promise<string> {
   return id
 }
 
-/** Real shipping options for the current cart. */
-export async function listShippingOptions(): Promise<ShippingOption[]> {
+/**
+ * يحفظ العنوانَ الوطنيَّ على السلّة.
+ *
+ * ⚠️ ويُنادى **قبل** خيارات الشحن لا بعدها: أجرةُ الشحن تُحسب للمنطقة
+ * والعنوان، وقائمةٌ تُجلب قبل أن يُعرف العنوانُ قد لا تكون قائمتَه.
+ */
+export async function saveAddress(form: NationalAddressForm): Promise<SaveAddressResult> {
   const id = await requireCartId()
-  return getShippingOptions(id)
+  // 🔴 الرمزُ يُمرَّر ولا يُمرَّر معرّفُ عميل: الخادمُ يشتقّ الهويّةَ منه
+  // بنفسه. ومعرّفٌ في الجسم يربط سلّةً بحساب غيرِ صاحبها.
+  const token = await readSession()
+  return setCartAddress(id, form, token)
 }
 
 /** Attach the chosen shipping method so the quote reflects its cost. */

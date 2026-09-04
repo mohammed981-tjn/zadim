@@ -2,7 +2,7 @@ import { MedusaService } from "@medusajs/framework/utils";
 import { randomUUID } from "crypto";
 import { ZatcaInvoice, ZatcaSetting } from "./models";
 import { buildQrTlv } from "./tlv";
-import { genesisHash, invoiceHash, verifyChain, type ChainRow } from "./chain";
+import { FIRST_SEQUENCE, genesisHash, invoiceHash, verifyChain, type ChainRow } from "./chain";
 
 export type IssueInput = {
   order_id: string;
@@ -45,6 +45,21 @@ export type IssueResult =
  * رقمٌ ضريبيٌّ وهميّ في رمزٍ يُطبع على فاتورةٍ تصل الهيئة. فالغيابُ
  * **يمنع** ولا يملأ الفراغ.
  */
+/**
+ * 🔴 اسمُ الجدول **بمخطَّطه المضبوط**، لا بـ`"zadim."` مكتوبةً.
+ *
+ * كان مكتوباً حرفياً في أربعة مواضع هنا، و`medusa-config.ts` يقرؤه من
+ * `DATABASE_SCHEMA`. فمن يضبط المتغيّر بغير `zadim` — وهو أوّلُ ما
+ * يخطر عند الانتقال إلى قاعدةٍ خاصّة — يجد **الفوترةَ وحدَها تسقط**
+ * بـ«relation does not exist»، وكلَّ شيءٍ آخرَ يعمل. وأسوأُ ما فيه أنه
+ * يسقط في **إصدار الفاتورة**: الطلبُ يمرّ، والفاتورةُ لا تُختم، والفجوةُ
+ * لا تُسدّ بأثرٍ رجعيّ (ADR-020).
+ *
+ * ولا يُقرأ المتغيّرُ عند كل نداء: قيمتُه لا تتغيّر في عمر العملية.
+ */
+const SCHEMA = process.env.DATABASE_SCHEMA || "zadim";
+const INVOICE_TABLE = `${SCHEMA}.zadim_zatca_invoice`;
+
 class ZatcaModuleService extends MedusaService({ ZatcaSetting, ZatcaInvoice }) {
   protected readonly pg_: any;
 
@@ -101,12 +116,14 @@ class ZatcaModuleService extends MedusaService({ ZatcaSetting, ZatcaInvoice }) {
       // فيُنتجان تكراراً — أو فجوةً حين يسقط أحدُهما.
       await trx.raw(`select pg_advisory_xact_lock(hashtext('zadim_zatca_invoice'))`);
 
-      const last = await trx("zadim.zadim_zatca_invoice")
+      const last = await trx(INVOICE_TABLE)
         .whereNull("deleted_at")
         .orderBy("sequence", "desc")
         .first();
 
-      const sequence = last ? Number(last.sequence) + 1 : 1;
+      // رقمُ البداية من `chain.ts` لا رقمٌ مكتوبٌ هنا: الفاحصُ يقارن به،
+      // ورقمان في موضعين يفترقان يوماً فيُصدر الخادمُ ما يرفضه فاحصُه.
+      const sequence = last ? Number(last.sequence) + 1 : FIRST_SEQUENCE;
       const previous_hash = last ? String(last.invoice_hash) : genesisHash();
 
       const payload = {
@@ -143,7 +160,7 @@ class ZatcaModuleService extends MedusaService({ ZatcaSetting, ZatcaInvoice }) {
       });
 
       const id = `zinv_${uuid.replace(/-/g, "")}`;
-      await trx("zadim.zadim_zatca_invoice").insert({
+      await trx(INVOICE_TABLE).insert({
         id,
         sequence,
         uuid,
@@ -159,7 +176,7 @@ class ZatcaModuleService extends MedusaService({ ZatcaSetting, ZatcaInvoice }) {
         status: "issued",
       });
 
-      const invoice = await trx("zadim.zadim_zatca_invoice").where({ id }).first();
+      const invoice = await trx(INVOICE_TABLE).where({ id }).first();
       return { issued: true, invoice };
     });
   }
@@ -184,7 +201,7 @@ class ZatcaModuleService extends MedusaService({ ZatcaSetting, ZatcaInvoice }) {
 
   /** حالةُ الإبلاغ من المزوّد المعتمد — الحقلُ الوحيد الذي يتغيّر بعد الإصدار. */
   async recordReporting(id: string, status: "reported" | "cleared" | "failed", ref?: string | null, error?: string | null) {
-    await this.pg_("zadim.zadim_zatca_invoice")
+    await this.pg_(INVOICE_TABLE)
       .where({ id })
       .update({ status, provider_ref: ref ?? null, last_error: error ?? null, updated_at: new Date() });
   }

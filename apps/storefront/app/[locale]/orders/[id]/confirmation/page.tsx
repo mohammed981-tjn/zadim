@@ -5,6 +5,8 @@ import { CheckCircle2 } from "lucide-react"
 import { Container } from "@/components/container"
 import { Price } from "@/components/price"
 import { buttonVariants } from "@/components/ui/button"
+import { ReviewForm } from "@/components/review/review-form"
+import { isSignedIn } from "@/lib/auth-actions"
 import { getOrder } from "@/lib/medusa"
 import { digits } from "@/lib/money"
 
@@ -33,6 +35,12 @@ export default async function ConfirmationPage({
     order = null
   }
 
+  // التقييمُ لمن دخل وحدَه: القيدُ يشترط أن يكون السطرُ **لهذا
+  // العميل**، والضيفُ لا هويّةَ له تُطابَق. فيُخفى النموذجُ بدل أن
+  // يُعرض ثم يُردّ ٤٠٣ بلا سببٍ مفهوم.
+  const signedIn = await isSignedIn()
+  const lines = order?.items ?? []
+
   return (
     <Container className="flex min-h-[60vh] flex-col items-center justify-center py-16 text-center">
       <CheckCircle2 className="size-16 text-success" aria-hidden="true" />
@@ -59,6 +67,33 @@ export default async function ConfirmationPage({
       <p className="mt-6 max-w-md text-sm text-muted-foreground text-pretty">
         {t(locale, "order.thanks")}
       </p>
+
+      {/* 🔴 **وموضعُ كتابة التقييم هنا لا في صفحة المنتج** (بند ٢٣):
+          القيدُ يشترط `order_line_item_id`، وهو ما تعرفه صفحةُ الطلب
+          وحدَها. وزرٌّ على صفحة المنتج يقود إلى نموذجٍ لا يملك ما
+          يُرسله — فالكتابةُ تبدأ من الشراء لأن الشرطَ كذلك. */}
+      {signedIn && lines.length ? (
+        <section
+          aria-labelledby="review-heading"
+          className="mt-10 w-full max-w-md space-y-4 text-start"
+        >
+          <h2 id="review-heading" className="text-sm font-bold">
+            {t(locale, "review.title")}
+          </h2>
+          {lines.map((line) =>
+            line.product_id ? (
+              <div key={line.id} className="rounded-xl border border-border p-4">
+                <p className="mb-2 text-sm font-medium">{line.title}</p>
+                <ReviewForm
+                  locale={locale}
+                  productId={line.product_id}
+                  lineItemId={line.id}
+                />
+              </div>
+            ) : null,
+          )}
+        </section>
+      ) : null}
 
       <Link href={`/${locale}`} className={buttonVariants({ className: "mt-8 h-11 px-8 text-sm font-semibold" })}>
         {t(locale, "order.continue")}

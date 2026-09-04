@@ -163,6 +163,537 @@ const ctx = await browser.newContext({
   locale: "ar-SA",
 });
 
+
+// ════════════════════════════════════════════════════════════════
+// 🔴 شراءٌ كاملٌ من المتصفّح — البوّابةُ التي لم تكن
+// ════════════════════════════════════════════════════════════════
+//
+// ── لماذا أُضيفت ────────────────────────────────────────────────
+//
+// فحصٌ في 2026-09-03 وجد أن شاشةَ الإتمام كانت **تجمع العنوانَ وتتركه
+// في المتصفّح**: لا دالّةَ تُحدّث السلّة أصلاً. فكلُّ طلبٍ يُنشأ بلا
+// عنوانِ شحن — ولا أحدَ يعرف أين يُرسَل.
+//
+// ولم تكشفه بوّابةٌ واحدة، لسببٍ واحد: **لا بوّابةَ كانت تشتري**.
+// `verify-checkout.ts` يبني السلّةَ بسيرِ العمل ومعها العنوانُ فيفحص
+// الخادمَ لا الواجهة، وهذه البوّابةُ كانت تزور أربعَ صفحاتٍ ولا تفتح
+// `/checkout` قطّ.
+//
+// فالدرسُ أن **كلَّ ما لا يُسلك لا يُفحص**. وهذه تسلك الطريقَ كما
+// يسلكه العميل: منتجٌ ⇐ سلّة ⇐ عنوانٌ وطنيّ ⇐ شحنٌ ⇐ تسعيرٌ ⇐ تأكيد.
+//
+// ⚠️ **وتُشغَّل بالعربية وحدَها**: الشراءُ يقيس السلكَ لا الترجمة،
+// واللغتان مفحوصتان في كل صفحةٍ أعلاه. وشراءان يضاعفان زمنَ البوّابة
+// ولا يشتريان يقيناً جديداً.
+/**
+ * 🔴 التصفيةُ بالخصائص **من المتصفّح** (بند ٣).
+ *
+ * وبوّابةُ الكتالوج تفحص المنطقَ بنداءٍ مباشر — وهي خضراءُ حتى لو لم
+ * تُرسَم لوحةٌ على الشاشة أصلاً. وهذه تفحص ما لا تفحصه: أن اللوحَ
+ * **يُرسَم**، وأن الضغطةَ **تُغيّر العنوانَ والنتائج**.
+ *
+ * ⚠️ **وصفحةُ التصنيف نفسُها لم تكن تُفتح**: قِيس أن كلَّ معرّفٍ عربيٍّ
+ * يُعيد «القسم غير موجود» — لأن Next يسلّم المقطعَ مرمَّزاً ثم كنّا
+ * نرمّزه ثانية. ولم تمسكه بوّابةٌ لأن **لا بوّابةَ كانت تزور تصنيفاً**.
+ */
+async function filterChecks(ctx) {
+  console.log("\n== 🔎 التصفيةُ بالخصائص (من المتصفّح) ==");
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e).slice(0, 140)));
+
+  /** عدَدُ بطاقات المنتجات المرسومة في منطقة النتائج. */
+  const productCount = () =>
+    page.evaluate(() => {
+      const main = document.querySelector("main");
+      if (!main) return 0;
+      const hrefs = [...main.querySelectorAll('a[href*="/p/"]')].map((a) => a.getAttribute("href"));
+      return new Set(hrefs).size;
+    });
+
+  try {
+    const url = `${BASE}/ar/c/${encodeURIComponent("إلكترونيات")}`;
+    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+
+    const notFound = await page.getByText("القسم غير موجود").count();
+    notFound === 0
+      ? pass("صفحةُ تصنيفٍ بمعرّفٍ عربيٍّ تُفتح — والترميزُ المزدوج كان يُعيد «القسم غير موجود»")
+      : fail("صفحةُ التصنيف تُعيد «القسم غير موجود» — الترميزُ المزدوج عاد");
+
+    const before = await productCount();
+    before > 0
+      ? pass(`والتصنيفُ يعرض منتجاتِه (${before}) — وبلا وصلةِ قناةِ بيعٍ كانت صفراً`)
+      : fail("التصنيفُ فارغٌ — راجعْ ربطَ منتجات seed-catalog بقناة البيع");
+
+    // بالعنوان لا بالدور: `aside` قد يفقد دورَ `complementary` بحسب
+    // ما يحويه، والعنوانُ المربوط بـ`aria-labelledby` لا يتغيّر.
+    const panel = page.locator('aside[aria-labelledby="filters-heading"]');
+    (await panel.count()) > 0
+      ? pass("ولوحُ التصفية مرسومٌ على الشاشة")
+      : fail("لا لوحَ تصفيةٍ — الخصائصُ تُحسب ولا تُعرض");
+
+    // أوّلُ خانةٍ في اللوح — بالدور لا بالمحدِّد.
+    const boxes = panel.getByRole("checkbox");
+    const n = await boxes.count();
+    if (n === 0) {
+      fail("لوحُ التصفية بلا خانات");
+    } else {
+      await boxes.first().check({ timeout: 15000 });
+      await page.waitForTimeout(2500);
+
+      decodeURIComponent(page.url()).includes("attr[")
+        ? pass("والضغطةُ تكتب الاختيارَ في العنوان — فالتصفيةُ تُشارَك وتُحفظ ويعمل زرُّ الرجوع")
+        : fail(`الاختيارُ لم يصل العنوان: ${page.url()}`);
+
+      const after = await productCount();
+      after < before
+        ? pass(`والنتائجُ ضاقت فعلاً (${before} ⇐ ${after}) — لا زرٌّ يُضاء ولا يصفّي`)
+        : fail(`النتائجُ لم تتغيّر (${before} ⇐ ${after}) — وزرٌّ لا يفعل شيئاً أسوأُ من غيابه`);
+
+      // وشاهدٌ عكسيّ: «مسح الكل» يُعيد الجميع.
+      await page.getByRole("button", { name: /مسح الكل/ }).first().click({ timeout: 15000 });
+      await page.waitForTimeout(2500);
+      (await productCount()) === before
+        ? pass("و«مسح الكل» يُعيد التصنيفَ كاملاً — الطريقُ ذو اتجاهين")
+        : fail("«مسح الكل» لم يُعِد كلَّ المنتجات");
+    }
+
+    errors.length === 0
+      ? pass("ولا خطأَ جافاسكربت في المسار كلِّه")
+      : fail(`أخطاءُ جافاسكربت: ${errors.join(" · ")}`);
+  } catch (e) {
+    fail(`سقطت فحوصُ التصفية: ${String(e.message).slice(0, 200)}`);
+  } finally {
+    await page.close();
+  }
+}
+
+async function buyOnce(ctx) {
+  console.log("\n== 🛒 شراءٌ كاملٌ من المتصفّح (عربي) ==");
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e).slice(0, 140)));
+
+  try {
+    await page.goto(`${BASE}/ar/p/zadim-headphones`, { waitUntil: "networkidle", timeout: 45000 });
+
+    // «أضف إلى السلة» — بالدور لا بالمحدِّد: زرٌّ يُعاد تصميمُه لا
+    // يكسر البوّابة، وزرٌّ يختفي يكسرها. وهذا هو المطلوب.
+    //
+    // ⚠️ **والاسمُ كاملٌ لا `/أضف|السلة/`.** كان فضفاضاً، فلمّا أُضيف
+    // زرُّ المفضّلة («أضف إلى المفضّلة») صار `.first()` يمسكه هو —
+    // فتُضغط ولا تُملأ السلّة، ثم يُحوَّل الإتمامُ إلى السلّة الفارغة
+    // وتسقط البوّابةُ عند حقلٍ لا وجودَ له. **والسقوطُ كان صحيحاً
+    // والمحدِّدُ هو الخطأ**: زرّان اسمُهما يبدأ بـ«أضف» على صفحةٍ
+    // واحدةٍ حالٌ عاديّة، والفاحصُ هو من يلزمه الدقّة.
+    await page
+      .getByRole("button", { name: "أضف إلى السلة", exact: true })
+      .first()
+      .click({ timeout: 20000 });
+    await page.waitForTimeout(2000);
+
+    await page.goto(`${BASE}/ar/checkout`, { waitUntil: "networkidle", timeout: 45000 });
+
+    const fill = async (label, value) => {
+      await page.getByLabel(label, { exact: false }).first().fill(value, { timeout: 10000 });
+    };
+
+    await fill("الاسم الأول", "بوّابة");
+    await fill("اسم العائلة", "زادم");
+    await fill("رقم الجوال", "0555000111");
+    await fill("رقم المبنى", "2743");
+    await fill("اسم الشارع", "طريق الملك فهد");
+    await fill("الحي", "العليا");
+    await fill("المدينة", "الرياض");
+    await fill("الرمز البريدي", "12211");
+    await fill("الرقم الإضافي", "6889");
+
+    pass("حقولُ العنوان الوطنيّ التسعة موجودةٌ وتُملأ");
+
+    await page.getByRole("button", { name: /متابعة إلى الشحن/ }).click({ timeout: 20000 });
+
+    const review = page.getByRole("button", { name: /مراجعة الطلب/ });
+    await review.waitFor({ timeout: 25000 });
+    pass("الشاشةُ انتقلت إلى الشحن");
+
+    // 🔴 والشرطُ الحاسم **يُسأل عنه الخادمُ لا الشاشة**.
+    //
+    // انتقالُ الخطوة لا يُثبت شيئاً: الشاشةُ القديمة كانت تنتقل
+    // `onClick={() => setStep("shipping")}` بلا نداءٍ أصلاً، فتبدو
+    // عاملةً والسلّةُ بلا عنوان. فيُقرأ معرّفُ السلّة من الكعكة، وتُسأل
+    // الخلفيّةُ: **هل عندها العنوانُ الوطنيُّ مهيكلاً؟**
+    const cartCookie = (await ctx.cookies()).find((c) => c.name === "zadim_cart_id");
+    if (!cartCookie?.value) {
+      fail("لا كعكةَ سلّة — تعذّر التحقّق من العنوان على الخادم");
+    } else {
+      const api = process.env.MEDUSA_URL ?? "http://localhost:9000";
+      const pk = process.env.MEDUSA_PK ?? process.env.NEXT_PUBLIC_MEDUSA_PK ?? "";
+      // ⚠️ `fields=+shipping_address.metadata` لازم: مسارُ المتجر
+      // **لا يُعيد `metadata` العنوان افتراضاً** (قِيس — والحقلُ مخزَّنٌ
+      // في القاعدة كاملاً). وفاحصٌ يسأل عمّا لا يُعاد يسقط على نظامٍ
+      // سليم، وهو أسوأُ من فاحصٍ لا يسأل.
+      const r = await fetch(
+        `${api}/store/carts/${cartCookie.value}?fields=%2Bshipping_address.metadata`,
+        { headers: { "x-publishable-api-key": pk } }
+      );
+      const body = await r.json().catch(() => ({}));
+      const sa = body?.cart?.shipping_address ?? {};
+      const national = sa?.metadata?.national_address;
+      national?.district === "العليا" &&
+      national?.additional_number === "6889" &&
+      sa?.address_1 === "2743 طريق الملك فهد"
+        ? pass("والخادمُ يحمل العنوانَ مهيكلاً (الحيُّ والرقمُ الإضافيّ) ومركَّباً في الملصق")
+        : fail(
+            "الشاشةُ انتقلت والسلّةُ بلا عنوانٍ وطنيٍّ على الخادم — " +
+              "وهذا بعينه العطبُ الذي وُجد في 2026-09-03."
+          );
+    }
+
+    await review.click({ timeout: 20000 });
+
+    const confirm = page.getByRole("button", { name: /تأكيد الطلب/ });
+    await confirm.waitFor({ timeout: 30000 });
+    pass("التسعيرُ تمّ وظهرت شاشةُ التأكيد");
+
+    await confirm.click({ timeout: 20000 });
+
+    // الوصولُ إلى صفحة التأكيد هو الدليل: العنوانُ الصحيح وحدَه يعبر
+    // حارسَ `ADDRESS_REQUIRED` في `orchestrate.ts`.
+    await page.waitForURL(/\/orders\/[^/]+\/confirmation/, { timeout: 60000 });
+    pass(`الطلبُ تمّ — ${new URL(page.url()).pathname}`);
+
+    errors.length === 0
+      ? pass("ولا خطأَ جافاسكربت في المسار كلِّه")
+      : fail(`أخطاءُ جافاسكربت أثناء الشراء: ${errors.join(" · ")}`);
+  } catch (e) {
+    fail(`سقط الشراءُ من المتصفّح: ${String(e.message).slice(0, 200)}`);
+  } finally {
+    await page.close();
+  }
+}
+
+
+/**
+ * حسابُ العميل — التسجيلُ والربطُ وحارسُ البريد (بند ٢١).
+ *
+ * ── ولماذا بـ`fetch` لا بمتصفّح ─────────────────────────────────
+ *
+ * الثلاثةُ التي تُفحص هنا **قراراتُ خادمٍ لا شاشات**: من يُربط بأيّ
+ * حساب. والمتصفّحُ يُثبت أن الشاشةَ تعمل، ولا يُثبت أن سلّةَ ضيفٍ لم
+ * تُربط بحساب غيره — وذاك ما يُخشى.
+ */
+async function accountChecks() {
+  console.log("\n== 👤 حسابُ العميل ==");
+  const api = process.env.MEDUSA_URL ?? "http://localhost:9000";
+  const pk = process.env.MEDUSA_PK ?? process.env.NEXT_PUBLIC_MEDUSA_PK ?? "";
+  const H = { "content-type": "application/json", "x-publishable-api-key": pk };
+
+  const post = (path, body, token) =>
+    fetch(`${api}${path}`, {
+      method: "POST",
+      headers: token ? { ...H, authorization: `Bearer ${token}` } : H,
+      body: JSON.stringify(body ?? {}),
+    });
+
+  try {
+    const email = `gate${Date.now()}@zadim.test`;
+    const password = "Zadim#Gate12345";
+
+    // ── التسجيل: ثلاث خطواتٍ لا واحدة ──────────────────────────
+    const reg = await post("/auth/customer/emailpass/register", { email, password });
+    const { token: regToken } = await reg.json();
+    regToken ? pass("التسجيل أعاد رمزاً") : fail(`التسجيل أخفق (${reg.status})`);
+
+    await post("/store/customers", { email, first_name: "بوّابة", last_name: "حساب" }, regToken);
+
+    // 🔴 رمزُ التسجيل **لا يصلح** لقراءة الحساب قبل التجديد — قِيس 401.
+    const before = await fetch(`${api}/store/customers/me`, {
+      headers: { ...H, authorization: `Bearer ${regToken}` },
+    });
+    before.status === 401
+      ? pass("ورمزُ التسجيل وحدَه لا يقرأ الحساب (401) — فالتجديدُ لازم")
+      : fail(`المنتظَر 401 قبل التجديد ووصل ${before.status} — إن تغيّر فراجعْ register()`);
+
+    const refreshed = await (await post("/auth/token/refresh", {}, regToken)).json();
+    const token = refreshed.token;
+    const me = await fetch(`${api}/store/customers/me`, {
+      headers: { ...H, authorization: `Bearer ${token}` },
+    });
+    // ⚠️ جسمُ `Response` يُقرأ **مرّةً واحدة** — فيُحفظ لا يُعاد نداؤه.
+    const meBody = await me.json().catch(() => ({}));
+    const customerId = meBody?.customer?.id ?? null;
+    me.status === 200 && customerId
+      ? pass("وبعد التجديد يُقرأ الحساب (200)")
+      : fail(`الحسابُ لا يُقرأ بعد التجديد (${me.status})`);
+
+    // ── حارسُ البريد: ضيفٌ ببريد حسابٍ مسجَّل ⇒ يُرفض ───────────
+    const regionRes = await fetch(`${api}/store/regions`, { headers: H });
+    const regionId = (await regionRes.json()).regions?.[0]?.id;
+    const newCart = async () =>
+      (await (await post("/store/carts", { region_id: regionId })).json()).cart?.id;
+
+    const ADDR = {
+      first_name: "ضيف",
+      last_name: "مجهول",
+      phone: "0555888777",
+      building_number: "1111",
+      street: "شارع",
+      district: "حيّ",
+      city: "الرياض",
+      postal_code: "11111",
+      additional_number: "2222",
+    };
+
+    const cartGuest = await newCart();
+    const hijack = await post(`/store/carts/${cartGuest}/address`, { ...ADDR, email });
+    const hijackBody = await hijack.json().catch(() => ({}));
+    hijack.status === 409 && hijackBody?.error?.code === "EMAIL_HAS_ACCOUNT"
+      ? pass("ضيفٌ ببريد حسابٍ مسجَّل ⇒ EMAIL_HAS_ACCOUNT")
+      : fail(
+          `ضيفٌ ببريد حسابٍ مسجَّل مرّ (${hijack.status}) — ` +
+            "وأثرُه أن طلبَه يدخل «طلباتي» عند صاحب الحساب، ويُفسد سجلَّ COD له."
+        );
+
+    // وشاهدٌ موجب: بريدٌ جديدٌ يمرّ — وإلا فالحارسُ يمنع الجميع
+    const cartFresh = await newCart();
+    const fresh = await post(`/store/carts/${cartFresh}/address`, {
+      ...ADDR,
+      email: `guest${Date.now()}@zadim.test`,
+    });
+    fresh.status === 200
+      ? pass("وبريدٌ جديدٌ يمرّ — الحارسُ يمنع الحالةَ وحدَها لا الجميع")
+      : fail(`ضيفٌ ببريدٍ جديدٍ رُفض (${fresh.status})`);
+
+    // ── ولا يُقبل `customer_id` من الجسم ────────────────────────
+    const cartSpoof = await newCart();
+    await post(`/store/carts/${cartSpoof}/address`, {
+      ...ADDR,
+      email: `spoof${Date.now()}@zadim.test`,
+      customer_id: customerId,
+    });
+    const spoofed = await (
+      await fetch(`${api}/store/carts/${cartSpoof}?fields=%2Bcustomer_id`, { headers: H })
+    ).json();
+    // العميلُ الضيفُ يُنشأ من البريد، والمهمُّ ألّا يكون **حسابَ غيره**
+    spoofed?.cart?.customer_id !== customerId
+      ? pass("و`customer_id` في الجسم لا يربط سلّةً بحساب غيرِ صاحبها")
+      : fail("سلّةٌ ارتبطت بحسابٍ عبر `customer_id` في الجسم");
+
+    // ── 📒 دفترُ العناوين ────────────────────────────────────────
+    console.log("\n== 📒 دفترُ العناوين ==");
+    const BOOK = "/store/customers/me/national-addresses";
+    const MINE = {
+      first_name: "صاحب",
+      last_name: "الحساب",
+      phone: "0501234567",
+      building_number: "2743",
+      street: "طريق الملك فهد",
+      district: "العليا",
+      city: "الرياض",
+      postal_code: "12212",
+      additional_number: "6889",
+    };
+
+    // 🔴 بلا رمزٍ: لا تُقرأ القائمةُ أصلاً — وإلا قرأ الغريبُ عناوينَ
+    // العملاء وهواتفَهم بنداءٍ واحد.
+    const anon = await fetch(`${api}${BOOK}`, { headers: H });
+    anon.status === 401
+      ? pass("بلا رمزِ جلسة: القائمةُ لا تُقرأ (401)")
+      : fail(`قائمةُ العناوين قُرئت بلا رمز (${anon.status}) — عناوينُ العملاء وهواتفُهم مكشوفة`);
+
+    const emptyRes = await fetch(`${api}${BOOK}`, {
+      headers: { ...H, authorization: `Bearer ${token}` },
+    });
+    const emptyBody = await emptyRes.json().catch(() => ({}));
+    (emptyBody?.addresses ?? []).length === 0
+      ? pass("وحسابٌ جديدٌ يبدأ بلا عناوين")
+      : fail("حسابٌ جديدٌ وُجد له عنوان");
+
+    const made = await post(BOOK, MINE, token);
+    const madeBody = await made.json().catch(() => ({}));
+    made.status === 201 && madeBody?.created === true && madeBody?.address?.id
+      ? pass("وحفظُ عنوانٍ ينجح (201)")
+      : fail(`حفظُ العنوان أخفق (${made.status})`);
+    const addressId = madeBody?.address?.id;
+
+    // أوّلُ عنوانٍ يصير الافتراضيَّ من نفسه.
+    const listed = await (
+      await fetch(`${api}${BOOK}`, { headers: { ...H, authorization: `Bearer ${token}` } })
+    ).json();
+    const one = (listed?.addresses ?? [])[0];
+    one?.district === "العليا" && one?.additional_number === "6889"
+      ? pass("ويُعاد **مهيكلاً** — الحيُّ والرقمُ الإضافيّ لا سطراً مركَّباً")
+      : fail(`العنوانُ لا يُعاد مهيكلاً: ${JSON.stringify(one ?? null).slice(0, 120)}`);
+    one?.is_default === true
+      ? pass("وأوّلُ عنوانٍ افتراضيٌّ من نفسه")
+      : fail("أوّلُ عنوانٍ لم يصر افتراضياً");
+
+    // 🔴 والتكرارُ الصامت لا يُنشأ: كلُّ إتمامٍ يمرّ بنفس النموذج.
+    const again = await post(BOOK, MINE, token);
+    const againBody = await again.json().catch(() => ({}));
+    againBody?.created === false && againBody?.address?.id === addressId
+      ? pass("وعنوانٌ مطابقٌ لا يُنشأ مرّتين — ولا يُردّ بخطأ")
+      : fail(`تكرارٌ صامتٌ أُنشئ: ${JSON.stringify(againBody?.created)}`);
+
+    // وشاهدٌ سالب: عنوانٌ ناقصٌ يُرفض — فالمحفوظُ الناقصُ أسوأُ من
+    // غياب الحفظ: يُختار من قائمةٍ ثم يُرفض الطلبُ عند آخر خطوة.
+    const bad = await post(BOOK, { ...MINE, postal_code: "123" }, token);
+    bad.status === 400
+      ? pass("وشاهدُه السالب: رمزٌ بريديٌّ من ثلاثة أرقام يُرفض")
+      : fail(`عنوانٌ ناقصٌ حُفظ (${bad.status})`);
+
+    // 🔴 وعنوانُ غيره لا يُحذف — ويُردّ ٤٠٤ لا ٤٠٣ كي لا يُخبَر
+    // المخمّنُ أن المعرّفَ صحيح.
+    const other = await post("/auth/customer/emailpass/register", {
+      email: `other${Date.now()}@zadim.test`,
+      password,
+    });
+    const otherReg = (await other.json())?.token;
+    await post("/store/customers", { email: `other${Date.now()}@zadim.test` }, otherReg);
+    const otherToken = (await (await post("/auth/token/refresh", {}, otherReg)).json())?.token;
+
+    const steal = await fetch(`${api}${BOOK}/${addressId}`, {
+      method: "DELETE",
+      headers: { ...H, authorization: `Bearer ${otherToken}` },
+    });
+    steal.status === 404
+      ? pass("وعنوانُ غيره لا يُحذف — و٤٠٤ لا ٤٠٣، فلا يُخبَر المخمّنُ أن المعرّفَ صحيح")
+      : fail(`عميلٌ آخرُ حذف عنوانَ غيره (${steal.status})`);
+
+    const stillThere = await (
+      await fetch(`${api}${BOOK}`, { headers: { ...H, authorization: `Bearer ${token}` } })
+    ).json();
+    (stillThere?.addresses ?? []).length === 1
+      ? pass("والعنوانُ باقٍ فعلاً بعد المحاولة — لا رفضٌ في الرد وحذفٌ في القاعدة")
+      : fail("العنوانُ اختفى رغم ردّ ٤٠٤");
+
+    // وصاحبُه يحذفه.
+    const gone = await fetch(`${api}${BOOK}/${addressId}`, {
+      method: "DELETE",
+      headers: { ...H, authorization: `Bearer ${token}` },
+    });
+    gone.status === 200
+      ? pass("وصاحبُه يحذفه (200) — الحارسُ يمنع الغريبَ لا المالك")
+      : fail(`صاحبُ العنوان لم يستطع حذفَه (${gone.status})`);
+
+    // ── ❤️ المفضّلة ─────────────────────────────────────────────
+    console.log("\n== ❤️ المفضّلة ==");
+    const WISH = "/store/customers/me/wishlist";
+
+    // 🔴 بلا رمز: لا تُقرأ. ومفضّلةُ شخصٍ تكشف ما يريده ومتى تردّد.
+    const wAnon = await fetch(`${api}${WISH}`, { headers: H });
+    wAnon.status === 401
+      ? pass("بلا رمزِ جلسة: المفضّلةُ لا تُقرأ (401)")
+      : fail(`المفضّلةُ قُرئت بلا رمز (${wAnon.status})`);
+
+    const prodRes = await fetch(`${api}/store/products?limit=1`, { headers: H });
+    const productId = (await prodRes.json())?.products?.[0]?.id;
+
+    if (!productId) {
+      fail("لا منتجَ لفحص المفضّلة");
+    } else {
+      const added = await post(WISH, { product_id: productId }, token);
+      const addedBody = await added.json().catch(() => ({}));
+      added.status === 201 && addedBody?.created === true
+        ? pass("وإضافةُ منتجٍ تنجح (201)")
+        : fail(`الإضافةُ أخفقت (${added.status})`);
+
+      // 🔴 والمتماثلةُ عند الإعادة: ضغطتان صفٌّ واحدٌ ونجاحٌ لا خطأ.
+      const twice = await post(WISH, { product_id: productId }, token);
+      const twiceBody = await twice.json().catch(() => ({}));
+      twice.status === 200 && twiceBody?.created === false
+        ? pass("وضغطةٌ ثانيةٌ تنجح ولا تُنشئ صفّاً — وإلا وصله خبران عن خفضٍ واحد")
+        : fail(`الإضافةُ المكرّرة: ${twice.status} created=${twiceBody?.created}`);
+
+      const listed = await (
+        await fetch(`${api}${WISH}`, { headers: { ...H, authorization: `Bearer ${token}` } })
+      ).json();
+      (listed?.items ?? []).length === 1 && listed.items[0]?.product_id === productId
+        ? pass("والقائمةُ صفٌّ واحدٌ بعنوان المنتج وصورته")
+        : fail(`القائمة: ${JSON.stringify(listed?.items ?? null).slice(0, 140)}`);
+
+      // وشاهدٌ سالب: معرّفٌ مخترَعٌ يُرفض — ولولاه لامتلأ الجدولُ
+      // بصفوفٍ لا تُعرض أبداً وتُسقط العميلَ في سقفٍ لا يفهمه.
+      const bogus = await post(WISH, { product_id: "prod_not_a_real_product" }, token);
+      bogus.status === 404
+        ? pass("ومعرّفُ منتجٍ مخترَعٌ يُرفض (404)")
+        : fail(`معرّفٌ مخترَعٌ قُبل (${bogus.status})`);
+
+      // ولا يرى أحدُهما مفضّلةَ الآخر.
+      const otherList = await (
+        await fetch(`${api}${WISH}`, { headers: { ...H, authorization: `Bearer ${otherToken}` } })
+      ).json();
+      (otherList?.items ?? []).length === 0
+        ? pass("وعميلٌ آخرُ لا يرى شيئاً — القائمةُ من رمز الجلسة لا من مُعامل")
+        : fail("عميلٌ رأى مفضّلةَ غيره");
+
+      const wGone = await fetch(`${api}${WISH}/${productId}`, {
+        method: "DELETE",
+        headers: { ...H, authorization: `Bearer ${token}` },
+      });
+      const wGoneBody = await wGone.json().catch(() => ({}));
+      wGone.status === 200 && wGoneBody?.removed === true
+        ? pass("والحذفُ يعمل")
+        : fail(`الحذفُ أخفق (${wGone.status})`);
+
+      // وحذفُ ما ليس فيها ينجح أيضاً: المطلوبُ ألّا يكون فيها، وهو ليس.
+      const wAgain = await fetch(`${api}${WISH}/${productId}`, {
+        method: "DELETE",
+        headers: { ...H, authorization: `Bearer ${token}` },
+      });
+      wAgain.status === 200
+        ? pass("وحذفٌ ثانٍ ينجح ولا يُردّ ٤٠٤ — فمن ضغط مرّتين نجح مرّتين")
+        : fail(`الحذفُ الثاني رُدّ (${wAgain.status})`);
+
+      // ── ⭐ التقييمات ─────────────────────────────────────────
+      console.log("\n== ⭐ التقييمات — لا تقييمَ بلا شراء ==");
+      const REV = `/store/products/${productId}/reviews`;
+
+      // 🔴 الشاهدُ الأهمّ: **من لم يشترِ يُردّ** ولو كان داخلاً.
+      const notBought = await post(
+        REV,
+        { order_line_item_id: "ordli_never_bought_this", rating: 5 },
+        token
+      );
+      const notBoughtBody = await notBought.json().catch(() => ({}));
+      notBought.status === 403 && notBoughtBody?.error?.code === "PURCHASE_REQUIRED"
+        ? pass("عميلٌ داخلٌ لم يشترِ ⇒ PURCHASE_REQUIRED (٤٠٣) — والقيدُ في القاعدة لا في النموذج")
+        : fail(
+            `قُبل تقييمٌ بلا شراء (${notBought.status}) — ` +
+              "«يشترط الشراء» صار فحصَ واجهةٍ يتخطّاه من ينادي المسارَ بنفسه"
+          );
+
+      // وبلا رمزٍ أصلاً.
+      const revAnon = await post(REV, { order_line_item_id: "x", rating: 5 });
+      revAnon.status === 401
+        ? pass("وبلا رمزِ جلسة ⇒ ٤٠١")
+        : fail(`كُتب تقييمٌ بلا رمز (${revAnon.status})`);
+
+      // ومدى التقييم يُفحص قبل أن يصل القاعدة.
+      const badRating = await post(
+        REV,
+        { order_line_item_id: "ordli_x", rating: 9 },
+        token
+      );
+      badRating.status === 400
+        ? pass("وتقييمٌ خارجَ ١–٥ يُردّ ٤٠٠")
+        : fail(`قُبل تقييمٌ خارج المدى (${badRating.status})`);
+
+      // والقراءةُ عامّةٌ بلا حساب — ولا تكشف هويّةَ من كتب.
+      const readRes = await fetch(`${api}${REV}`, { headers: H });
+      const readBody = await readRes.json().catch(() => ({}));
+      readRes.status === 200 && Array.isArray(readBody?.reviews) && readBody?.summary
+        ? pass("والقراءةُ عامّةٌ بلا حساب، ومعها ملخّصٌ (متوسّطٌ وعدد)")
+        : fail(`قراءةُ التقييمات: ${readRes.status}`);
+      !JSON.stringify(readBody?.reviews ?? []).includes("customer_id")
+        ? pass("ولا يُعاد `customer_id` — رأيٌ عامٌّ لا يُربط بشخصٍ لمن يجمع الردود")
+        : fail("معرّفُ العميل مكشوفٌ في التقييمات");
+    }
+  } catch (e) {
+    fail(`سقطت فحوصُ الحساب: ${String(e.message).slice(0, 160)}`);
+  }
+}
+
 try {
   for (const loc of LOCALES)
   for (const [rawPath, label] of PAGES) {
@@ -565,6 +1096,10 @@ try {
         "للدرجة: أضِف `--lighthouse`."
     );
   }
+
+  await filterChecks(ctx);
+  await buyOnce(ctx);
+  await accountChecks();
 } finally {
   await browser.close();
 }

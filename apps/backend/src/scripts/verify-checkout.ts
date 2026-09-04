@@ -7,6 +7,11 @@ import {
 } from "@medusajs/medusa/core-flows";
 import { runCheckout, runQuote } from "../modules/checkout/orchestrate";
 import { fingerprint, priceDrift, totalsBalance } from "../modules/checkout/pricing";
+import {
+  normalizeSaudiMobile,
+  toMedusaAddress,
+  validateNationalAddress,
+} from "../modules/checkout/national-address";
 
 /**
  * بوّابةُ المرحلة ٤ — السلّة و Checkout (`07-roadmap.md`).
@@ -43,6 +48,102 @@ export default async function verifyCheckout({ container }: ExecArgs) {
 
   // ── ٠) المنطقُ الخالص — بلا سلّةٍ ولا قاعدة ───────────────────
   logger.info("== المنطقُ الخالص ==");
+
+  // ── العنوانُ الوطنيّ — منطقٌ خالصٌ يُفحص بلا قاعدة ──────────────
+  const GOOD = {
+    first_name: "محمد",
+    last_name: "العتيبي",
+    phone: "0555000111",
+    building_number: "2743",
+    street: "طريق الملك فهد",
+    district: "العليا",
+    city: "الرياض",
+    postal_code: "12211",
+    additional_number: "6889",
+  };
+
+  validateNationalAddress(GOOD).valid
+    ? pass("عنوانٌ وطنيٌّ كاملٌ يُقبل")
+    : fail(`عنوانٌ صحيحٌ رُفض: ${JSON.stringify(validateNationalAddress(GOOD))}`);
+
+  // 🔴 وكلُّ حقلٍ إلزاميٍّ يُرفض غيابُه — حقلاً حقلاً، لا عيّنةً منها.
+  // فحقلٌ يُنسى من الفحص هو الحقلُ الذي يُنسى من النموذج.
+  for (const field of [
+    "first_name",
+    "last_name",
+    "phone",
+    "building_number",
+    "street",
+    "district",
+    "city",
+    "postal_code",
+    "additional_number",
+  ]) {
+    const bad = { ...GOOD, [field]: "" };
+    const r = validateNationalAddress(bad);
+    !r.valid && r.errors.some((e) => e.field === field)
+      ? pass(`غيابُ «${field}» يُرفض ويُسمّى`)
+      : fail(`غيابُ «${field}» مرّ`);
+  }
+
+  // الأطوالُ الرقمية: أربعةٌ وخمسةٌ بالضبط لا «أربعةٌ فأكثر»
+  const lens: Array<[string, string]> = [
+    ["building_number", "274"],
+    ["building_number", "27431"],
+    ["postal_code", "1221"],
+    ["postal_code", "122111"],
+    ["additional_number", "688"],
+  ];
+  let lenOk = 0;
+  for (const [field, value] of lens) {
+    const r = validateNationalAddress({ ...GOOD, [field]: value });
+    if (!r.valid && r.errors.some((e) => e.field === field)) lenOk++;
+  }
+  lenOk === lens.length
+    ? pass(`الأطوالُ الرقمية تُفحص بالضبط (${lenOk}/${lens.length})`)
+    : fail(`مرّ طولٌ خاطئ: ${lenOk}/${lens.length}`);
+
+  // الأرقامُ الهندية تُطبَّع ولا تُرفض — الناسُ يكتبونها
+  const indic = validateNationalAddress({ ...GOOD, building_number: "٢٧٤٣", postal_code: "١٢٢١١" });
+  indic.valid && indic.value.building_number === "2743" && indic.value.postal_code === "12211"
+    ? pass("الأرقامُ الهندية تُطبَّع ولا تُرفض")
+    : fail("الأرقامُ الهندية رُفضت أو لم تُطبَّع");
+
+  // الجوّالُ بصيغه الثلاث ⇒ صيغةٌ واحدة. وبلا هذا يصير الرقمُ الواحدُ
+  // ثلاثةَ عملاءَ في قائمة منع COD.
+  const phones = ["0555000111", "+966555000111", "٠٥٥٥٠٠٠١١١", "966555000111"];
+  const normalized = new Set(phones.map((p) => normalizeSaudiMobile(p)));
+  normalized.size === 1 && normalized.has("0555000111")
+    ? pass("الجوّالُ يُطبَّع إلى صيغةٍ واحدة مهما كُتب")
+    : fail(`صيغُ الجوّال لم توحَّد: ${[...normalized].join(" · ")}`);
+
+  normalizeSaudiMobile("0111234567") === null && normalizeSaudiMobile("") === null
+    ? pass("وغيرُ الجوّال السعوديّ يُرفض")
+    : fail("رقمٌ غيرُ جوّالٍ سعوديٍّ قُبل");
+
+  // الرمزُ المختصر اختياريٌّ — لكنه إن كُتب فبصيغته
+  validateNationalAddress({ ...GOOD, short_address: "" }).valid &&
+  !validateNationalAddress({ ...GOOD, short_address: "RRD292" }).valid &&
+  validateNationalAddress({ ...GOOD, short_address: "rrrd2929" }).valid
+    ? pass("الرمزُ المختصر: يُقبل غيابُه، ويُرفض شكلُه الخاطئ")
+    : fail("الرمزُ المختصر لا يُفحص كما يجب");
+
+  // 🔴 وكلُّ الأخطاء تُعاد لا أوّلُها — وإلا أرسل العميلُ خمسَ مرّات
+  const empty = validateNationalAddress({});
+  !empty.valid && empty.errors.length >= 9
+    ? pass(`عنوانٌ فارغٌ يُعيد ${empty.errors.length} خطأً دفعةً واحدة`)
+    : fail("الأخطاءُ لا تُعاد مجتمعة");
+
+  // والتركيبُ ثم القراءة يعودان بنفس القيمة — الاتجاهُ واحدٌ ولا يُشتقّ
+  // المهيكلُ من الملصق.
+  {
+    const built = toMedusaAddress((validateNationalAddress(GOOD) as any).value);
+    const back = (built.metadata as any).national_address;
+    back.district === "العليا" && back.additional_number === "6889" && built.address_1 === "2743 طريق الملك فهد"
+      ? pass("التركيبُ يحفظ المهيكلَ ويبني الملصق")
+      : fail(`التركيبُ أفسد الحقول: ${JSON.stringify(built)}`);
+  }
+
 
   const lines = [
     { id: "li_1", variant_id: "v_1", title: "أ", quantity: 2, unit_price: 100 },
@@ -122,20 +223,49 @@ export default async function verifyCheckout({ container }: ExecArgs) {
     return (r?.rows ?? r)[0]?.n ?? 0;
   };
 
-  const newCart = async (qty = 2) => {
+  /**
+   * عنوانٌ وطنيٌّ صالح — **يُركَّب بدالّة الإنتاج نفسِها**.
+   *
+   * ولا يُكتب هنا بخطّ اليد: لو كُتب، لاختلف شكلُ `metadata` عمّا يكتبه
+   * `POST /store/carts/:id/address`، فتمرّ البوّابةُ على شكلٍ لا وجودَ
+   * له في الإنتاج — وهو أسوأ من ألّا تُفحص.
+   */
+  const gateAddress = (() => {
+    const check = validateNationalAddress({
+      first_name: "بوّابة",
+      last_name: "زادم",
+      phone: "0555000111",
+      building_number: "2743",
+      street: "طريق الملك فهد",
+      district: "العليا",
+      city: "الرياض",
+      postal_code: "12211",
+      additional_number: "6889",
+    });
+    if (!check.valid) {
+      throw new Error(`[zadim] عنوانُ البوّابة نفسُه غيرُ صالح: ${JSON.stringify(check.errors)}`);
+    }
+    return toMedusaAddress(check.value);
+  })();
+
+  const newCart = async (qty = 2, withAddress = true) => {
     const { result } = await createCartWorkflow(container).run({
       input: {
         region_id: region.id,
         sales_channel_id: channel.id,
         currency_code: "sar",
         email: "gate@zadim.test",
-        shipping_address: {
-          first_name: "بوّابة",
-          last_name: "زادم",
-          address_1: "طريق الملك فهد",
-          city: "الرياض",
-          country_code: "sa",
-        },
+        shipping_address: withAddress
+          ? (gateAddress as any)
+          : {
+              // عنوانٌ «غربيٌّ» بلا حقولنا — وهو ما يكتبه مسارُ Medusa
+              // العامّ، وما كانت تكتبه شاشتُنا قبل هذه الدفعة.
+              first_name: "بلا",
+              last_name: "عنوانٍ وطنيّ",
+              address_1: "طريق الملك فهد",
+              city: "الرياض",
+              country_code: "sa",
+            },
         items: [{ variant_id: variant.id, quantity: qty }],
       },
     });
@@ -158,6 +288,40 @@ export default async function verifyCheckout({ container }: ExecArgs) {
 
   try {
     await setPrice(BASE_PRICE);
+
+    // ── ٠) بلا عنوانٍ وطنيٍّ ⇒ يُرفض قبل إنشاء الطلب ─────────────
+    //
+    // 🔴 هذا الفحصُ هو الذي كان غائباً، وغيابُه ترك المتجرَ ينشئ طلباتٍ
+    // **لا تُشحن**: الشاشةُ تجمع العنوانَ وتتركه في المتصفّح، وبوّابةُ
+    // الإتمام كانت تبني السلّةَ بعنوانٍ عبر سيرِ العمل — فتفحص الخادمَ
+    // لا الواجهة، وتمرّ خضراءَ على متجرٍ لا يعرف أين يُرسل شيئاً.
+    //
+    // ويُقاس بعدّ الطلبات لا بقراءة الردّ: رفضٌ يُعيد رسالةً ويُنشئ
+    // الطلبَ خلفها أسوأُ من قبولٍ صريح.
+    logger.info("== بلا عنوانٍ وطنيٍّ ⇒ يُرفض قبل إنشاء الطلب ==");
+
+    const cartNoAddr = await newCart(1, false);
+    createdCarts.push(cartNoAddr);
+    const beforeAddr = await countOrders();
+    const addrOut = await runCheckout(container, cartNoAddr, `gate-addr-${Date.now()}`);
+    const afterAddr = await countOrders();
+
+    addrOut.status === 400 && (addrOut.body as any).error?.code === "ADDRESS_REQUIRED"
+      ? pass("عنوانٌ بلا حقولٍ وطنية ⇒ ADDRESS_REQUIRED")
+      : fail(`المتوقّع ADDRESS_REQUIRED ووصل ${addrOut.status} ${JSON.stringify(addrOut.body)}`);
+
+    afterAddr === beforeAddr
+      ? pass(`ولا طلبَ أُنشئ (${beforeAddr} ⇐ ${afterAddr})`)
+      : fail(`أُنشئ طلبٌ رغم الرفض: ${beforeAddr} ⇐ ${afterAddr}`);
+
+    // وشاهدٌ موجب: نفسُ السلّة بعنوانٍ وطنيٍّ كاملٍ **تمرّ** — وإلا فالفحصُ
+    // يثبت أن شيئاً يمنع، لا أن الذي يمنع هو العنوان.
+    const cartOk = await newCart(1, true);
+    createdCarts.push(cartOk);
+    const okOut = await runCheckout(container, cartOk, `gate-addr-ok-${Date.now()}`);
+    okOut.status === 201
+      ? pass("والشاهدُ الموجب: نفسُ السلّة بعنوانٍ كاملٍ تمرّ")
+      : fail(`سلّةٌ بعنوانٍ كاملٍ رُفضت: ${okOut.status} ${JSON.stringify(okOut.body).slice(0, 200)}`);
 
     // ── ١) تغيّرُ السعر بين العرض والإتمام ──────────────────────
     logger.info("== البوّابة: تغيّرُ السعر ⇒ يُرفض قبل أخذ المال ==");

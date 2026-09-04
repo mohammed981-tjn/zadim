@@ -14,7 +14,16 @@ export type Filter = {
   attribute_code: string;
   name_ar: string;
   data_type: string;
-  values: Array<{ value: string; count: number }>;
+  values: Array<{ value: string; count: number; selected: boolean }>;
+};
+
+/** ما اختاره الزائر: رمزُ الخاصية ⇐ قيمةٌ أو أكثر. */
+export type Selection = Record<string, string[]>;
+
+export type BrowseResult = {
+  /** معرّفاتُ المنتجات الباقية بعد التصفية. */
+  product_ids: string[];
+  filters: Filter[];
 };
 
 /**
@@ -40,29 +49,135 @@ class CatalogModuleService extends MedusaService({
    * معرَّفةٍ مسبقاً: فلترٌ يعرض «أحمر» ولا منتجَ أحمر يُنتج نتيجةً
    * فارغة، وهي أسوأُ من غياب الفلتر — المستخدمُ يظنّ المتجرَ معطوباً.
    */
-  async getCategoryFilters(categoryId: string, productIds: string[]): Promise<Filter[]> {
+  /**
+   * 🔴 **التصفيةُ بالخصائص** (بند ٣) — والفلاترُ معها في نداءٍ واحد.
+   *
+   * كانت الخصائصُ تُحسب وتُعرض بأعدادها **ولا مسارَ يصفّي بها**: وعدٌ
+   * مرئيٌّ على الشاشة لا يفي. وهذه تُتمّه.
+   *
+   * ── وثلاثةُ قراراتٍ فيها، لكلٍّ بديلٌ مرفوض ────────────────────
+   *
+   * **١) داخلَ الخاصية «أو»، وبين الخصائص «و».** فمن اختار الأحمرَ
+   * والأزرقَ يريد أيَّهما، ومن اختار الأحمرَ والمقاسَ L يريدهما معاً.
+   * والبديلُ («و» في الكلّ) يُنتج نتيجةً فارغةً من أوّل اختيارَين —
+   * ولا منتجَ أحمرُ وأزرقُ في آنٍ واحد.
+   *
+   * **٢) والمطابقةُ على `value_normalized`** لا على النصّ الخام: من
+   * يكتب «احمر» بلا همزةٍ في الرابط يجد ما كُتب «أحمر». والتطبيعُ
+   * مخزَّنٌ لا محسوبٌ وقتَ القراءة (`product-attribute-value.ts`).
+   *
+   * **٣) وعدَدُ كلِّ خاصيةٍ يُحسب على المجموعة المصفّاة بما عداها هي.**
+   * وهذا أدقُّ ما هنا: لو حُسب اللونُ على المجموعة المصفّاة **باللون
+   * أيضاً**، لصار كلُّ لونٍ غيرِ المختار صفراً — فيرى الزائرُ «أزرق
+   * (٠)» ولا يستطيع التبديلَ إليه إلا بإلغاء اختياره أوّلاً. وهو عطبٌ
+   * لا يشكو منه شيء، ويجعل الفلاترَ طريقاً ذا اتجاهٍ واحد.
+   */
+  async browseCategory(
+    categoryId: string,
+    productIds: string[],
+    selection: Selection = {}
+  ): Promise<BrowseResult> {
     const links = await this.listCategoryAttributes(
       { category_id: categoryId },
       { relations: ["attribute"], order: { sort_order: "ASC" } }
     );
 
+    const filterable = (links as any[])
+      .map((l) => l.attribute)
+      .filter((a) => a?.is_filterable);
+
+    if (!productIds.length || !filterable.length) {
+      return { product_ids: productIds, filters: [] };
+    }
+
+    // كلُّ قيمِ الخصائص القابلة للفلترة لمنتجات هذا التصنيف — قراءةٌ
+    // واحدة. والبديلُ استعلامٌ لكلّ خاصيةٍ ثم آخرُ لكلّ عدّ، وهو
+    // N+1 على شاشةٍ تُفتح في كل زيارة.
+    const rows = (await this.listProductAttributeValues({
+      attribute_id: filterable.map((a) => a.id),
+      product_id: productIds,
+    })) as any[];
+
+    /** رمزُ الخاصية ⇐ (معرّفُ المنتج ⇐ قيمتُه الخام) */
+    const byCode = new Map<string, Map<string, string>>();
+    /** رمزُ الخاصية ⇐ (معرّفُ المنتج ⇐ قيمتُه المطبَّعة) */
+    const normByCode = new Map<string, Map<string, string>>();
+    const codeOf = new Map<string, string>(filterable.map((a) => [a.id, a.code]));
+
+    for (const r of rows) {
+      const code = codeOf.get(r.attribute_id);
+      if (!code) continue;
+      if (!byCode.has(code)) {
+        byCode.set(code, new Map());
+        normByCode.set(code, new Map());
+      }
+      byCode.get(code)!.set(r.product_id, r.value);
+      normByCode.get(code)!.set(r.product_id, r.value_normalized);
+    }
+
+    // الاختياراتُ تُطبَّع مرّةً — لا مرّةً لكل منتج.
+    //
+    // 🔴 **ويُسقَط اختيارُ خاصيةٍ لا وجودَ لها في هذا التصنيف.** وهذا
+    // أُمسك بالقياس لا بالقراءة: `?attr[bogus]=x` كان يُعيد **صفرَ
+    // منتجاتٍ** لا التصنيفَ كاملاً، لأن لا منتجَ يحمل قيمةً لخاصيةٍ
+    // غيرِ موجودة فيسقط الجميع في اختبار «منتجٌ بلا قيمةٍ يخرج».
+    //
+    // وأثرُه ليس نظرياً: رابطٌ محفوظٌ أو مشاركٌ بخاصيةٍ حُذفت لاحقاً —
+    // أو رابطُ تصنيفٍ لُصق على تصنيفٍ آخر — يُري صاحبَه تصنيفاً فارغاً
+    // ويقول له «لا بضاعةَ هنا». وهي كذبةٌ سببُها معاملٌ ميت.
+    const known = new Set(filterable.map((a) => a.code));
+    const wanted = new Map<string, Set<string>>();
+    for (const [code, values] of Object.entries(selection)) {
+      if (!known.has(code)) continue;
+      const set = new Set(values.map((v) => normalizeArabic(v)).filter(Boolean));
+      if (set.size) wanted.set(code, set);
+    }
+
+    /** المنتجاتُ الباقيةُ بعد تطبيق كلِّ الاختيارات **عدا** `skip`. */
+    const surviving = (skip?: string): string[] =>
+      productIds.filter((pid) => {
+        for (const [code, set] of wanted) {
+          if (code === skip) continue;
+          const v = normByCode.get(code)?.get(pid);
+          // منتجٌ بلا قيمةٍ لخاصيةٍ مطلوبة **يخرج**: من طلب المقاسَ L
+          // لا يريد ما لا مقاسَ له. وإبقاؤه يجعل الفلترَ اقتراحاً لا
+          // تصفية.
+          if (!v || !set.has(v)) return false;
+        }
+        return true;
+      });
+
+    const finalIds = surviving();
+
     const filters: Filter[] = [];
+    for (const attribute of filterable) {
+      const values = byCode.get(attribute.code);
+      if (!values) continue;
 
-    for (const link of links as any[]) {
-      const attribute = link.attribute;
-      if (!attribute?.is_filterable) continue;
-
-      // بلا منتجاتٍ في التصنيف لا قيمَ تُعرض — والفلترُ يسقط كلُّه.
-      const values = productIds.length
-        ? await this.listProductAttributeValues({
-            attribute_id: attribute.id,
-            product_id: productIds,
-          })
-        : [];
+      // القرار ٣: عدُّ هذه الخاصية على المجموعة المصفّاة بما عداها.
+      const base = surviving(attribute.code);
+      const norms = normByCode.get(attribute.code)!;
+      const chosen = wanted.get(attribute.code);
 
       const counts = new Map<string, number>();
-      for (const v of values as any[]) {
-        counts.set(v.value, (counts.get(v.value) ?? 0) + 1);
+      for (const pid of base) {
+        const raw = values.get(pid);
+        if (raw) counts.set(raw, (counts.get(raw) ?? 0) + 1);
+      }
+
+      // 🔴 **والمختارُ يبقى معروضاً ولو صار عدَدُه صفراً.**
+      //
+      // أُمسك بالقياس: «أزرق» + «٢٥٦ جيجا» يُعطيان صفرَ منتجات، وحين
+      // يُحسب فلترُ اللون على المصفّى بالسعة **يختفي «أزرق» من قائمته
+      // كلَّها** — فيرى الزائرُ نتيجةً فارغةً ولا يجد ما يُلغيه، ولا
+      // مخرجَ له إلا «مسح الكل». وهو مصيدةٌ: يفقد اختيارَه الآخر معه.
+      //
+      // فيُضاف المختارُ بعدّهِ الحقيقي (صفراً) — يُرى، ويُنزع بضغطة.
+      if (chosen) {
+        for (const [pid, n] of norms) {
+          const raw = values.get(pid);
+          if (raw && chosen.has(n) && !counts.has(raw)) counts.set(raw, 0);
+        }
       }
 
       if (!counts.size) continue;
@@ -72,11 +187,37 @@ class CatalogModuleService extends MedusaService({
         name_ar: attribute.name_ar,
         data_type: attribute.data_type,
         values: [...counts.entries()]
-          .map(([value, count]) => ({ value, count }))
+          .map(([value, count]) => ({
+            value,
+            count,
+            // «مختارة» تُحسب بالمطبَّع أيضاً: من كتب «احمر» في الرابط
+            // يجب أن يرى «أحمر» مؤشَّرةً، وإلا ضغطها ثانيةً فأُلغيت.
+            selected: Boolean(
+              chosen &&
+                [...norms.entries()].some(
+                  ([pid, n]) => values.get(pid) === value && chosen.has(n)
+                )
+            ),
+          }))
           .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value, "ar")),
       });
     }
 
+    return { product_ids: finalIds, filters };
+  }
+
+  async getCategoryFilters(categoryId: string, productIds: string[]): Promise<Filter[]> {
+    const links = await this.listCategoryAttributes(
+      { category_id: categoryId },
+      { relations: ["attribute"], order: { sort_order: "ASC" } }
+    );
+
+    // غلافٌ على `browseCategory` بلا اختيارات — **ولا حسابٌ ثانٍ**.
+    // كان هنا حسابٌ مستقلٌّ للأعداد، وحسابان في موضعين يفترقان يوماً
+    // وأحدُهما يكذب. و`links` أعلاه تُقرأ مرّتين، وثمنُها استعلامٌ
+    // واحدٌ على جدولٍ صغير — أرخصُ من منطقٍ مكرَّر.
+    void links;
+    const { filters } = await this.browseCategory(categoryId, productIds, {});
     return filters;
   }
 

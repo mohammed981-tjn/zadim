@@ -9,8 +9,11 @@ import { CHECKOUT_MODULE } from "./index";
 import type CheckoutModuleService from "./service";
 import { WAREHOUSE_MODULE } from "../warehouse";
 import type WarehouseModuleService from "../warehouse/service";
+import { PAYMENTS_MODULE } from "../payments";
+import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
 import { cartLines, currentPrices, readCart } from "./cart-reader";
+import { readNationalAddress } from "./national-address";
 
 /**
  * ترتيبُ الإتمام السبعة — **خارجَ المسار عمداً**.
@@ -26,6 +29,17 @@ import { cartLines, currentPrices, readCart } from "./cart-reader";
  */
 
 export type Outcome = { status: number; body: Record<string, unknown> };
+
+/**
+ * مُعرِّفُ مزوّد الدفع عند الاستلام.
+ *
+ * وشكلُه `pp_<identifier>_<id>` اصطلاحُ Medusa: `identifier` من
+ * `cod-payment/service.ts` و`id` من `medusa-config.ts`. فتغييرُ أيّهما
+ * يغيّر هذا — ولذلك يُكتب ثابتاً واحداً هنا، ويقابله فحصٌ في
+ * `verify-payments.ts` يتأكّد أن المزوّدَ بهذا الاسم **مسجَّلٌ فعلاً**
+ * في الحاوية. وإلا فأوّلُ ما يكشف الخطأ عميلٌ لا يستطيع الشراء.
+ */
+export const COD_PROVIDER_ID = "pp_cod_cod";
 
 const err = (
   status: number,
@@ -199,6 +213,35 @@ export async function runCheckout(
     return finish(err(400, "CART_EMPTY", "السلّةُ فارغة."), "CART_EMPTY");
   }
 
+  // ── ٠ب) العنوانُ الوطنيّ — **قبل كلّ شيءٍ يُكلّف** ─────────────
+  //
+  // 🔴 الحارسُ الذي كان غائباً، وغيابُه كان يُنتج **طلباتٍ لا تُشحن**.
+  //
+  // شاشةُ الإتمام كانت تجمع العنوانَ وتتركه في المتصفّح، فيُنشأ الطلبُ
+  // بلا عنوانٍ ولا بريد. ولم تكشفه بوّابةٌ واحدة: `verify-checkout.ts`
+  // يبني السلّةَ بالعنوان عبر سيرِ العمل فيفحص الخادمَ لا الواجهة،
+  // وبوّابةُ المتصفّح لا تزور `/checkout` أصلاً.
+  //
+  // ⚠️ **ولا يكفي أن يوجد عنوان**: `POST /store/carts/:id` مسارٌ عامٌّ
+  // من Medusa يقبل أيَّ عنوانٍ بلا حقولنا. فيُفحص **اكتمالُه** لا
+  // حضورُه — والقراءةُ من `metadata.national_address` لا من النصّ
+  // المركَّب، فالاتجاهُ واحدٌ ولا يُشتقّ المهيكلُ من الملصق.
+  //
+  // وموضعُه هنا لا مع بقيّة الحرّاس: هو أرخصُ فحصٍ في الترتيب (قراءةُ
+  // حقلٍ مقروءٍ أصلاً)، ورفضُه لا يحتاج تسعيراً ولا مخزوناً. ثم إن
+  // خطوةَ COD أدناه تقرأ منه المدينةَ والجوّال — فلا معنى لتشغيلها قبله.
+  const national = readNationalAddress(cart.shipping_address);
+  if (!national) {
+    return finish(
+      err(
+        400,
+        "ADDRESS_REQUIRED",
+        "أكملْ بيانات العنوان الوطنيّ قبل تأكيد الطلب — رقمُ المبنى والشارعُ والحيُّ والمدينةُ والرمزُ البريديُّ والرقمُ الإضافيّ."
+      ),
+      "ADDRESS_REQUIRED"
+    );
+  }
+
   // ── ١) الأسعارُ من المصدر ─────────────────────────────────────
   const prices = await currentPrices(scope, cart);
   const drift = checkout.drift(lines, prices);
@@ -246,6 +289,38 @@ export async function runCheckout(
         diff: balance.diff,
       }),
       "TOTALS_MISMATCH"
+    );
+  }
+
+  // ── ٣ب) أهليّةُ الدفع عند الاستلام — **قبل الحجز وقبل الطلب** ──
+  //
+  // 🔴 هذه شرطُ الخطوة ٧ (جلسةُ الدفع) مسحوباً إلى هنا عمداً — والسبعةُ
+  // كما هي في `04-api-contract.md`. ولو تُرك في مكانه لحجزنا المخزونَ
+  // ثم رفضنا، فيخرج الصنفُ من السوق لعميلٍ لم يشترِ.
+  //
+  // ⚠️ **و COD هو وسيلةُ الدفع الوحيدة اليوم** (`medusa-config.ts`:
+  // مزوّدٌ واحد). فرفضُ الأهليّة رفضٌ للطلب كلِّه لا تحويلٌ إلى وسيلةٍ
+  // أخرى — وهذا صحيحٌ لا نقص: ادّعاءُ بدائلَ لا وجودَ لها أسوأ. ويوم
+  // يصل مزوّدٌ ثانٍ يصير هذا اختياراً لا بوّابة.
+  //
+  // وكانت هذه الفحوصُ كلُّها مبنيّةً ومُختبَرةً في المرحلة ٦ (`payments/cod.ts`)
+  // **ولا يناديها مسارُ إنتاجٍ واحد**: البوّابةُ تنادي الدالّةَ مباشرةً
+  // فتمرّ خضراء، والمتجرُ لا يمرّ بها. فحدُّ المالك ورفضاتُه كانا حبراً.
+  const payments = scope.resolve(PAYMENTS_MODULE) as PaymentsModuleService;
+  const cod = await payments.codDecision({
+    order_total: totals.total,
+    // من العنوان المهيكل لا من حقول Medusa: المدينةُ هناك مطبَّعةٌ
+    // مفحوصة، والجوّالُ موحَّدُ الصيغة (`05…`) — ومفتاحُ منع COD يُبنى
+    // منه، فصيغتان مختلفتان لرقمٍ واحد تعنيان عميلين في نظر القائمة.
+    city: national.city,
+    phone: national.phone,
+    email: cart.email ?? null,
+  });
+
+  if (!cod.eligible) {
+    return finish(
+      err(409, cod.code, cod.reason_ar),
+      cod.code
     );
   }
 
@@ -402,11 +477,19 @@ async function allocationFor(
 }
 
 /**
- * جلسةُ دفعٍ إن لم تكن — بمزوّد النظام.
+ * جلسةُ دفعٍ إن لم تكن — **بمزوّد الدفع عند الاستلام**.
  *
- * ⚠️ **مؤقّتٌ حتى المرحلة ٦**: `pp_system_default` يوافق على كل شيءٍ
- * بلا تحصيلٍ حقيقيّ. ومكتوبٌ هنا لا في رسالةِ التزامٍ تُنسى: من يقرأ
- * هذا الملفّ يجب أن يعرف أن «تمّ الدفع» اليوم تعني «سُجّل» لا «حُصِّل».
+ * ── وكان `pp_system_default` — وهو خطأٌ عاش بعد سببه ─────────────
+ *
+ * كُتب «مؤقّتٌ حتى المرحلة ٦»، ثم اجتازت المرحلةُ ٦ وبقي السطر. فبقي
+ * كلُّ طلبٍ يُتمّ بمزوّدٍ **يوافق على كلّ شيءٍ بلا تحصيل**، ومزوّدُ COD
+ * المبنيُّ في تلك المرحلة لا يصله نداء. ومعه سقط ما يحرسه:
+ * `money_held: false` التي تمنع حسابَ الموعود محصَّلاً، وحارسُ
+ * «التحصيلُ بعد الشحن» في القاعدة الذي لا يُنادى إن لم يُنادَ المزوّد.
+ *
+ * ⚠️ **و«تمّ الطلب» عند COD تعني «التزم العميل»** لا «حُصِّل المال»:
+ * المالُ يُقيَّد عند التسليم (`cod-payment/service.ts`). وهذا فرقٌ يجب
+ * أن يعرفه من يقرأ تقريراً مالياً، ولذلك تُميَّز بياناتُ الجلسة.
  */
 async function ensurePayment(scope: any, cart: any) {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY);
@@ -426,6 +509,6 @@ async function ensurePayment(scope: any, cart: any) {
       .result.id;
 
   await createPaymentSessionsWorkflow(scope).run({
-    input: { payment_collection_id: collectionId, provider_id: "pp_system_default" },
+    input: { payment_collection_id: collectionId, provider_id: COD_PROVIDER_ID },
   });
 }

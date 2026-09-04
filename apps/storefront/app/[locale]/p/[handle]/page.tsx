@@ -5,7 +5,10 @@ import { Container } from "@/components/container"
 import { Gallery } from "@/components/product/gallery"
 import { BuyBox } from "@/components/product/buy-box"
 import { EmptyState, ErrorState } from "@/components/states"
-import { getProductByHandle, type ProductImage } from "@/lib/medusa"
+import { FavoriteButton } from "@/components/wishlist/favorite-button"
+import { isSignedIn, myFavorites } from "@/lib/auth-actions"
+import { ReviewList } from "@/components/review/review-list"
+import { getProductByHandle, getProductReviews, type ProductImage } from "@/lib/medusa"
 
 type Params = { handle: string; locale: Locale }
 
@@ -59,6 +62,15 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
         ? [{ id: "thumb", url: product.thumbnail }]
         : []
 
+  // حالةُ المفضّلة تُقرأ من الخادم لا من المتصفّح: قلبٌ يبدأ فارغاً
+  // ثم يمتلئ بعد لحظةٍ يجعل الزائرَ يضغطه فيُلغي ما كان محفوظاً.
+  const [signedIn, favorites, reviewData] = await Promise.all([
+    isSignedIn(),
+    myFavorites(),
+    getProductReviews(product.id),
+  ])
+  const saved = favorites.some((f) => f.product_id === product.id)
+
   return (
     <Container className="py-8 sm:py-12">
       <nav aria-label={t(locale, "product.breadcrumb")} className="mb-6 text-sm text-muted-foreground">
@@ -72,9 +84,24 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
       </nav>
 
       <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
-        <Gallery locale={locale} images={images} title={product.title} />
+        <div className="relative">
+          <Gallery locale={locale} images={images} title={product.title} />
+          <FavoriteButton
+            productId={product.id}
+            locale={locale}
+            initiallySaved={saved}
+            signedIn={signedIn}
+            className="absolute top-3 end-3 z-10"
+          />
+        </div>
         <BuyBox locale={locale} product={product} />
       </div>
+
+      <ReviewList
+        locale={locale}
+        reviews={reviewData.reviews}
+        summary={reviewData.summary}
+      />
     </Container>
   )
 }

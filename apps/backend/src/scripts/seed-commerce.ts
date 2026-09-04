@@ -1,6 +1,8 @@
 import { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, Modules, ProductStatus } from "@medusajs/framework/utils";
 import { CATALOG_MODULE } from "../modules/catalog";
+import { PAYMENTS_MODULE } from "../modules/payments";
+import type PaymentsModuleService from "../modules/payments/service";
 import {
   createRegionsWorkflow,
   createSalesChannelsWorkflow,
@@ -146,6 +148,15 @@ export default async function seedCommerce({ container }: ExecArgs) {
     });
   }
 
+  // ── وسائلُ الدفع في المنطقة ───────────────────────────────────
+  //
+  // 🔴 `pp_cod_cod` **أوّلاً وهو الحقيقيّ**: الدفعُ عند الاستلام وسيلةُ
+  // الدفع الوحيدةُ المبنيّةُ اليوم (`06-saudi-layer.md` §٢)، وهو ما
+  // يستعمله `checkout/orchestrate.ts`. و`pp_system_default` يبقى
+  // **للفحوص وحدَها** — تستعمله `probe-checkout.ts` وبعضُ البوّابات،
+  // وليس وسيلةَ دفعٍ لعميل.
+  const PAYMENT_PROVIDERS = ["pp_cod_cod", "pp_system_default"];
+
   let [region] = await regionModule.listRegions({ name: "السعودية" });
   if (!region) {
     const { result } = await createRegionsWorkflow(container).run({
@@ -155,12 +166,45 @@ export default async function seedCommerce({ container }: ExecArgs) {
             name: "السعودية",
             currency_code: "sar",
             countries: ["sa"],
-            payment_providers: ["pp_system_default"],
+            payment_providers: PAYMENT_PROVIDERS,
           },
         ],
       },
     });
     region = result[0];
+  }
+
+  // ── ٢ب) سياسةُ الدفع عند الاستلام ─────────────────────────────
+  //
+  // 🔴 **بلا هذا الصفّ لا يبيع المتجرُ شيئاً.** غيابُ السياسة يعني
+  // `COD_DISABLED` (`payments/cod.ts`: «الافتراضُ منعٌ لا سماح»)، وCOD
+  // هو وسيلةُ الدفع الوحيدة — فيُرفض كلُّ إتمامٍ حتى يضبطها المالك.
+  // والمنعُ الافتراضيُّ صحيحٌ في القاعدة، وبذرةٌ تُقلع متجراً لا يبيع
+  // ليست بذرة.
+  //
+  // ⚠️ **ولا رقمَ هنا** (بند ٤٨ و«لا قاعدةَ عملٍ مبرمَجة»): الصفُّ
+  // يُبذر مفعَّلاً و**كلُّ حدودِه `null`** — أي «بلا حدّ» بتعريف الوحدة
+  // نفسِها، لا «الحدُّ الافتراضيّ كذا». والحدُّ الأعلى موازنةٌ بين بيعٍ
+  // يُكسب وشحنتين تُخسران عند الرفض بالباب، وذاك قرارُ مالكٍ يضبطه من
+  // `/admin/payments/cod-policy` — لا رقمٌ يخترعه سكربتُ بذر.
+  //
+  // ومُتماثلةٌ عند الإعادة: الفهرسُ `IDX_zadim_cod_policy_single` يسمح
+  // بصفٍّ حيٍّ واحد، فلا تُكتب ثانيةً إن وُجدت — ولا تُداس سياسةُ متجرٍ
+  // حقيقيٍّ ضبطها مالكُه.
+  const payments = container.resolve(PAYMENTS_MODULE) as PaymentsModuleService;
+  const [codPolicy] = await payments.listCodPolicies({}, { take: 1 });
+  if (!codPolicy) {
+    await payments.createCodPolicies([
+      {
+        is_enabled: true,
+        max_order_total: null,
+        min_order_total: null,
+        refusals_before_block: null,
+        excluded_cities: null,
+        note: "بذرةٌ أوّلية — مفعَّلٌ بلا حدود. اضبط الحدودَ من لوحة الإدارة.",
+      },
+    ]);
+    logger.info("[zadim] بُذرت سياسةُ الدفع عند الاستلام: مفعَّلةٌ بلا حدود.");
   }
 
   // ── ٣) المنطقة الضريبية ───────────────────────────────────────

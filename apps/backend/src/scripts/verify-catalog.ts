@@ -146,6 +146,81 @@ export default async function verifyCatalog({ container }: ExecArgs) {
       : fail("فلترٌ فيه قيمةٌ بلا منتجات");
   }
 
+  // ── ٥ب) 🔴 التصفيةُ بالخصائص — أربعُ دلالاتٍ لكلٍّ بديلٌ مرفوض ──
+  //
+  // كانت الخصائصُ تُحسب وتُعرض بأعدادها **ولا مسارَ يصفّي بها**: وعدٌ
+  // مرئيٌّ على الشاشة لا يفي. وهذه تحرس ما بُني.
+  logger.info("== التصفيةُ بالخصائص ==");
+  if (elecCat) {
+    const ids = (elecCat.products ?? []).map((p: any) => p.id);
+    const browse = (sel: Record<string, string[]>) =>
+      catalog.browseCategory(elecCat.id, ids, sel);
+
+    const all = await browse({});
+    const colorFilter = all.filters.find((f) => f.attribute_code === "color");
+    const twoColors = (colorFilter?.values ?? []).slice(0, 2).map((v) => v.value);
+
+    if (twoColors.length < 2) {
+      fail("يلزم لونان مختلفان في إلكترونيات لفحص التصفية — شغّل seed-catalog");
+    } else {
+      const [c1, c2] = twoColors;
+
+      const one = await browse({ color: [c1] });
+      one.product_ids.length > 0 && one.product_ids.length < all.product_ids.length
+        ? pass(`اختيارُ «${c1}» يُضيّق (${all.product_ids.length} ⇐ ${one.product_ids.length})`)
+        : fail(`التصفيةُ لم تُضيّق: ${all.product_ids.length} ⇐ ${one.product_ids.length}`);
+
+      // ١) داخلَ الخاصية «أو» — ولو كانت «و» لصار الجوابُ صفراً، ولا
+      //    منتجَ بلونين في آن.
+      const both = await browse({ color: [c1, c2] });
+      both.product_ids.length > one.product_ids.length
+        ? pass("وقيمتان لنفس الخاصية «أو» لا «و» — وإلا لصار الجوابُ صفراً")
+        : fail(`«أو» داخل الخاصية لا تعمل: ${both.product_ids.length} ≤ ${one.product_ids.length}`);
+
+      // ٢) 🔴 وعدُّ الخاصية يُحسب على المصفّى **بما عداها هي**.
+      //    ولولاه لصار كلُّ لونٍ غيرِ المختار صفراً، فلا يستطيع الزائرُ
+      //    التبديلَ إليه — والفلاترُ طريقٌ ذو اتجاهٍ واحد.
+      const after = one.filters.find((f) => f.attribute_code === "color");
+      const other = after?.values.find((v) => v.value === c2);
+      other && other.count > 0
+        ? pass(`وبعد اختيار «${c1}» يبقى «${c2}» بعددٍ حقيقيّ (${other.count}) — فالتبديلُ ممكن`)
+        : fail("عدُّ اللون حُسب على المصفّى باللون نفسِه — لا تبديلَ بعد الاختيار");
+
+      after?.values.find((v) => v.value === c1)?.selected === true
+        ? pass("والمختارُ مؤشَّرٌ في ردّ الخادم لا في المتصفّح")
+        : fail("المختارُ غيرُ مؤشَّر");
+
+      // ٣) 🔴 وخاصيةٌ لا وجودَ لها **تُتجاهَل** ولا تُفرغ التصنيف.
+      //    أُمسك بالقياس: كانت تُعيد صفرَ منتجاتٍ لأن لا منتجَ يحمل
+      //    قيمةً لها — فرابطٌ محفوظٌ بخاصيةٍ حُذفت يقول «لا بضاعةَ هنا».
+      const bogus = await browse({ zzz_not_an_attribute: ["x"] });
+      bogus.product_ids.length === all.product_ids.length
+        ? pass("وخاصيةٌ مجهولةٌ تُتجاهَل — رابطٌ قديمٌ يعرض التصنيفَ كاملاً لا فارغاً")
+        : fail(`خاصيةٌ مجهولةٌ أفرغت التصنيف (${bogus.product_ids.length})`);
+
+      // ٤) 🔴 والمختارُ يبقى معروضاً ولو صار عدَدُه صفراً.
+      //    أُمسك بالقياس أيضاً: تقاطعٌ فارغٌ كان **يُخفي المختارَ من
+      //    قائمته**، فلا يجد الزائرُ ما يُلغيه ولا مخرجَ إلا «مسح الكل»
+      //    — فيفقد اختيارَه الآخر معه.
+      const storageFilter = all.filters.find((f) => f.attribute_code === "storage");
+      const impossible = storageFilter?.values.find(
+        (v) => !one.filters.find((f) => f.attribute_code === "storage")?.values.some((x) => x.value === v.value)
+      );
+      if (impossible) {
+        const dead = await browse({ color: [c1], storage: [impossible.value] });
+        const shown = dead.filters
+          .find((f) => f.attribute_code === "storage")
+          ?.values.find((v) => v.value === impossible.value);
+        dead.product_ids.length === 0 && shown?.selected === true && shown.count === 0
+          ? pass("وتقاطعٌ فارغٌ يُبقي المختارَ ظاهراً بعدّادِ صفر — فيُنزع بضغطة لا بـ«مسح الكل»")
+          : fail(`المختارُ اختفى عند التقاطع الفارغ: ${JSON.stringify(shown ?? null)}`);
+      } else {
+        // لا تقاطعَ فارغاً في البذرة — يُقال ولا يُدَّعى نجاحٌ لم يُقس.
+        logger.info("     ℹ️  لا تقاطعَ فارغاً في بيانات البذرة — لم يُفحص بقاءُ المختار");
+      }
+    }
+  }
+
   // ── ٦) المرادفات بيانات ────────────────────────────────────────
   logger.info("== المرادفات بيانات لا كود ==");
   // ⚠️ **كلمةٌ لا وجودَ لها في أي كتالوج** لا كلمةٌ نظنُّها غيرَ موجودة.

@@ -20,8 +20,23 @@ import { matchesAnyTerm, normalizeArabic } from "../../../modules/catalog/arabic
  * `iPhone 15 Pro` والمستخدمُ يكتب «ايفون» — ولا جذرَ يجمعهما.
  * والمرادفاتُ **بيانات** يضيفها المدير (ADR-006).
  */
+/**
+ * أطولُ استعلامٍ يُقبل.
+ *
+ * ولا يُردّ الطويلُ بخطأ بل **يُقصّ**: زائرٌ لصق فقرةً في مربّع البحث
+ * لا يُعاقب برسالة، ويُبحث عن أوّلِ ما كتب. والحدُّ يمنع أن يجرّ نداءٌ
+ * واحدٌ توسيعَ مرادفاتٍ ومطابقةً على نصٍّ بحجم كتاب.
+ */
+const MAX_QUERY = 120;
+
+/** أكثرُ ما يُطابَق عليه من منتجات. */
+const SCAN_LIMIT = 1000;
+
+/** أكثرُ ما يُعاد للزائر. */
+const RESULT_LIMIT = 60;
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const raw = String(req.query.q ?? "").trim();
+  const raw = String(req.query.q ?? "").trim().slice(0, MAX_QUERY);
   if (!raw) {
     return res.json({ query: "", normalized: "", terms: [], products: [], count: 0 });
   }
@@ -33,10 +48,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const terms = await catalog.expandQuery(raw);
 
   // نقرأ الحقول التي يُطابَق عليها فقط — لا المنتجَ كاملاً لكل مرشَّح.
+  //
+  // ⚠️ **وبسقفٍ صريح.** كان بلا `take`: كلُّ منتجٍ منشورٍ يُحمَّل إلى
+  // الذاكرة مع **كل** استعلامِ بحث. وهو مقبولٌ لكتالوجٍ بحجمنا اليوم
+  // وغيرُ مقبولٍ بلا حدٍّ أبداً — المتجرُ ينمو ولا أحد يُعيد قراءة هذا
+  // السطر، فيصير أوّلُ ما يُسقط الخادمَ نداءَ بحثٍ من زائر. والسقفُ
+  // يجعل أسوأَ الحالات معروفاً بدل أن يكون مفتوحاً.
+  //
+  // ويوم يضيق: فهرسٌ خارجيٌّ خلف نفس هذه الواجهة (ADR-006) —
+  // والمُنادي لا يتغيّر.
   const { data: products } = await query.graph({
     entity: "product",
     fields: ["id", "title", "handle", "description", "status"],
     filters: { status: "published" },
+    pagination: { take: SCAN_LIMIT },
   });
 
   // المطابقةُ على النصّ **المطبَّع** من الطرفين، **بكلماتٍ كاملةٍ أو
@@ -52,7 +77,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     query: raw,
     normalized,
     terms,
-    products: matches.map((p) => ({
+    // `count` عددُ ما طابق فعلاً، و`products` ما يُعرض منه. وخلطُهما
+    // يجعل «٦٠ نتيجة» جواباً لكل بحثٍ واسع — رقمٌ يكذب على الزائر.
+    products: matches.slice(0, RESULT_LIMIT).map((p) => ({
       id: p.id,
       title: p.title,
       handle: p.handle,

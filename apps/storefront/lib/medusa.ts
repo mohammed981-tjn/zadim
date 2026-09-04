@@ -89,6 +89,16 @@ export interface Order {
   id: string
   display_id: number | string
   total: number
+  items?: OrderLine[]
+}
+
+/** سطرُ طلبٍ — وما يلزم لكتابة تقييمٍ عنه (بند ٢٣). */
+export interface OrderLine {
+  id: string
+  title: string
+  quantity: number
+  thumbnail: string | null
+  product_id: string | null
 }
 
 export interface ShippingOption {
@@ -327,7 +337,11 @@ async function fetchProducts(query: string, revalidate: number, locale: Locale):
 }
 
 export async function getProductByHandle(handle: string, locale: Locale): Promise<Product | null> {
-  const products = await fetchProducts(`handle=${encodeURIComponent(handle)}&limit=1`, 60, locale)
+  const products = await fetchProducts(
+    `handle=${encodeURIComponent(decodeHandle(handle))}&limit=1`,
+    60,
+    locale,
+  )
   return products[0] ? toProduct(products[0]) : null
 }
 
@@ -340,12 +354,37 @@ export async function getProductsByHandles(handles: string[], locale: Locale): P
   return handles.map((h) => byHandle.get(h)).filter((p): p is Product => Boolean(p))
 }
 
+/**
+ * 🔴 يفكّ ترميزَ مقطعِ مسارٍ **مرّةً واحدة** — وهذا إصلاحُ عطبٍ حيّ.
+ *
+ * ── ما كان يقع ──────────────────────────────────────────────────
+ *
+ * Next يسلّم `params.handle` **مرمَّزاً** (`%D8%A5…`)، ثم كنّا نمرّره
+ * إلى `encodeURIComponent` — فيصير `%25D8%25A5…`، وهو نصٌّ لا يطابق
+ * أيَّ سطرٍ في القاعدة.
+ *
+ * وأثرُه أن **كلَّ صفحة تصنيفٍ عربيّةٍ في المتجر تُعيد «القسم غير
+ * موجود»**. قِيس على الفرع قبل هذه الدفعة وبعدها: قبلَها 404 دائماً.
+ * ولم تمسكه بوّابةٌ لأن **لا بوّابةَ تزور صفحةَ تصنيف** — والمعرّفات
+ * الإنجليزية (`zadim-headphones`) تعمل فتُخفيه.
+ *
+ * والفكُّ محميٌّ بـ`try`: مقطعٌ يحمل `%` وحدَه ليس ترميزاً صالحاً،
+ * ويرمي `URIError`. فيُستعمل كما هو بدل أن تسقط الصفحة.
+ */
+export function decodeHandle(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 export async function getCategoryByHandle(
   handle: string,
   locale: Locale,
 ): Promise<ProductCategory | null> {
   const data = await medusaFetch<{ product_categories: ProductCategory[] }>(
-    `/store/product-categories?handle=${encodeURIComponent(handle)}&limit=1${localeQuery(locale)}`,
+    `/store/product-categories?handle=${encodeURIComponent(decodeHandle(handle))}&limit=1${localeQuery(locale)}`,
     { revalidate: 60 },
   )
   return data?.product_categories?.[0] ?? null
@@ -367,36 +406,83 @@ export interface CategoryProductsResult {
   category: ProductCategory | null
   products: Product[]
   count: number
+  filters: CategoryFilter[]
 }
 
+/** فلترٌ مولَّدٌ كما يُعيده الخادم. */
+export interface CategoryFilter {
+  attribute_code: string
+  name_ar: string
+  data_type: string
+  values: Array<{ value: string; count: number; selected: boolean }>
+}
+
+/** ما اختاره الزائر — رمزُ الخاصية ⇐ قيمةٌ أو أكثر. */
+export type FilterSelection = Record<string, string[]>
+
 /**
- * ⚠️ **ولا تصفيةَ بالخصائص بعد — وهذا مقصودٌ ومكتوب.**
+ * منتجاتُ تصنيفٍ — **مصفّاةً بالخصائص** (بند ٣).
  *
- * كانت هذه الدالةُ تمرّر كلَّ معاملٍ في العنوان إلى `/store/products`
- * «ليفسّره الخادم». وهو لا يفسّره: Medusa **يرفض** المعاملَ الذي لا
- * يعرفه، فأوّلُ نقرةٍ على لونٍ كانت تُعيد ٤٠٠ لا نتائجَ مصفّاة.
+ * ⚠️ **ولا يُمرَّر معاملٌ مجهولٌ إلى `/store/products`.** هذا ما كان
+ * يقع: كلُّ معاملٍ في العنوان يُمرَّر «ليفسّره الخادم»، وMedusa **يرفض**
+ * ما لا يعرفه — فأوّلُ نقرةٍ على لونٍ كانت تُعيد ٤٠٠ لا نتائجَ مصفّاة.
+ * فالتصفيةُ تقع في `‎/store/categories/:id/browse` الذي يفهم الخصائص،
+ * ثم تُجلب تفاصيلُ ما بقي **بمعرّفاته** من مسار المنتجات.
  *
- * والخصائصُ نفسُها موجودةٌ في الخلفية (`GET /store/categories/:id/filters`
- * يُعيدها بأعدادها)، **ولا مسارَ يصفّي المنتجاتِ بها**. فلا تُرسم أدواتُ
- * تصفيةٍ لا تصفّي: زرٌّ لا يفعل شيئاً أسوأُ من غيابه، لأن الزائرَ يظنّ
- * المتجرَ خالياً من مقاسه وهو موجود.
+ * ── ونداءان لا واحد، بترتيبٍ مقصود ──────────────────────────────
  *
- * والمسارُ الناقص مسجَّلٌ في `dev-docs`/الخطوات المعلّقة للمرحلة ١٠.
+ * الأوّلُ يقرّر **مَن يبقى** (خصائصُ ووحدتُنا)، والثاني يجلب **كيف
+ * يُعرض** (ترجمةٌ وسعرُ المنطقة — وهما عند Medusa لا عندنا). ودمجُهما
+ * يعني نقلَ منطق التسعير والترجمة إلى وحدتنا، وهو تكرارٌ يفترق يوماً.
  */
 export async function getCategoryProducts(
   handle: string,
   locale: Locale,
+  selection: FilterSelection = {},
 ): Promise<CategoryProductsResult> {
   const category = await getCategoryByHandle(handle, locale)
-  if (!category) return { category: null, products: [], count: 0 }
+  if (!category) return { category: null, products: [], count: 0, filters: [] }
 
-  const products = await fetchProducts(
-    `category_id[]=${encodeURIComponent(category.id)}&limit=48`,
-    30,
-    locale,
-  )
+  const qs = Object.entries(selection)
+    .flatMap(([code, values]) =>
+      values.map((v) => `attr[${encodeURIComponent(code)}]=${encodeURIComponent(v)}`),
+    )
+    .join("&")
 
-  return { category, products: products.map(toProduct), count: products.length }
+  let productIds: string[] = []
+  let filters: CategoryFilter[] = []
+  try {
+    const browsed = await medusaFetch<{ product_ids: string[]; filters: CategoryFilter[] }>(
+      `/store/categories/${encodeURIComponent(category.id)}/browse${qs ? `?${qs}` : ""}`,
+      { revalidate: 30 },
+    )
+    productIds = browsed.product_ids ?? []
+    filters = browsed.filters ?? []
+  } catch {
+    // 🔴 سقوطُ التصفية **لا يُفرغ التصنيف**: يُعرض كاملاً بلا فلاتر.
+    // وصفحةُ تصنيفٍ فارغةٌ تقول للزائر «لا بضاعةَ هنا» — وهي كذبةٌ
+    // سببُها عطلٌ عندنا لا نفادُ مخزون.
+    const all = await fetchProducts(
+      `category_id[]=${encodeURIComponent(category.id)}&limit=48`,
+      30,
+      locale,
+    )
+    return { category, products: all.map(toProduct), count: all.length, filters: [] }
+  }
+
+  if (!productIds.length) {
+    return { category, products: [], count: 0, filters }
+  }
+
+  const idQs = productIds.slice(0, 48).map((id) => `id[]=${encodeURIComponent(id)}`).join("&")
+  const products = await fetchProducts(`${idQs}&limit=48`, 30, locale)
+
+  // ترتيبُ الخادم يُحفظ: هو مرتَّبٌ بما يقرّره التصنيف، و`id[]` لا
+  // يضمن ترتيبَ ما يُعيد.
+  const byId = new Map(products.map((p: any) => [p.id, toProduct(p)]))
+  const ordered = productIds.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p))
+
+  return { category, products: ordered, count: ordered.length, filters }
 }
 
 /* ------------------------------------------------------------------ */
@@ -498,9 +584,22 @@ export async function removeLineItem(cartId: string, lineId: string): Promise<Ca
 /* Quote & checkout                                                    */
 /* ------------------------------------------------------------------ */
 
+/**
+ * طلبٌ بسطوره.
+ *
+ * ⚠️ **و`fields` صريحةٌ رغم أنها غيرُ لازمةٍ اليوم.** قِيس أن
+ * `/store/orders/:id` يُعيد `items.product_id` **افتراضاً** — فالسطرُ
+ * لا يُصلح عطلاً قائماً. وهو مكتوبٌ لأن هذه الحقولَ **شرطُ عمل زرّ
+ * التقييم**: بلا `product_id` لا يُعرف أيُّ منتجٍ يُقيَّم. و`+` يضيف
+ * إلى الافتراضيّ ولا يستبدله، فإن تغيّر الافتراضُ يوماً بقيت تصل.
+ */
 export async function getOrder(id: string): Promise<Order | null> {
+  const fields = "+items.product_id,+items.thumbnail,+items.quantity"
   try {
-    const data = await medusaFetch<{ order: Order }>(`/store/orders/${id}`, { cache: "no-store" })
+    const data = await medusaFetch<{ order: Order }>(
+      `/store/orders/${id}?fields=${encodeURIComponent(fields)}`,
+      { cache: "no-store" },
+    )
     return data?.order ?? null
   } catch (err) {
     if (err instanceof MedusaError && err.status === 404) return null
@@ -529,6 +628,324 @@ export async function addShippingMethod(cartId: string, optionId: string): Promi
     cache: "no-store",
   })
   return data.cart
+}
+
+/* ------------------------------------------------------------------ */
+/* Customer account                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface Customer {
+  id: string
+  email: string
+  first_name?: string | null
+  last_name?: string | null
+  phone?: string | null
+}
+
+/** طلبٌ في قائمة «طلباتي» — ما يكفي للعرض، لا الطلبُ كاملاً. */
+export interface OrderSummary {
+  id: string
+  display_id: number | string
+  status: string
+  created_at: string
+  /** بالهللات. */
+  total: number
+  currency_code: string
+}
+
+/**
+ * نداءُ مصادقةٍ أو نداءٌ برمز جلسة.
+ *
+ * ومفصولٌ عن `medusaFetch` لأنه يختلف في ثلاثة: يحمل `Authorization`،
+ * ويقبل أن يكون بلا جسم (`GET`)، **ولا يُخبَّأ أبداً** — ردُّ
+ * `‎/store/customers/me` يخصّ شخصاً بعينه، وتخبئتُه تعرضُه لغيره.
+ */
+export async function medusaAuth<T>(
+  path: string,
+  body?: unknown | null,
+  token?: string,
+): Promise<T> {
+  return medusaFetch<T>(path, {
+    method: body === undefined || body === null ? "GET" : "POST",
+    ...(body === undefined || body === null ? {} : { body: JSON.stringify(body) }),
+    ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
+    cache: "no-store",
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* National address                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * العنوانُ الوطنيّ السعوديّ — ستّةُ حقولٍ إلزامية.
+ *
+ * 🔴 **وهذه الدالّةُ هي السلكُ الذي كان مقطوعاً**: كانت الشاشةُ تجمع
+ * العنوانَ وتتركه في المتصفّح، فيُنشأ الطلبُ بلا عنوانٍ ولا بريد —
+ * ولا أحدَ يعرف أين يُرسَل.
+ */
+export interface NationalAddressForm {
+  first_name: string
+  last_name: string
+  phone: string
+  building_number: string
+  street: string
+  district: string
+  city: string
+  postal_code: string
+  additional_number: string
+  short_address?: string
+  email?: string
+}
+
+/** خطأُ حقلٍ واحد كما يُعيده الخادم. */
+export interface AddressFieldError {
+  field: string
+  code: string
+  message_ar: string
+}
+
+export type SaveAddressResult =
+  | { ok: true }
+  | { ok: false; message: string; fields: AddressFieldError[] }
+
+export async function setCartAddress(
+  cartId: string,
+  form: NationalAddressForm,
+  /** رمزُ الجلسة إن كان العميلُ داخلاً — يربط السلّةَ بحسابه. */
+  token?: string | null,
+): Promise<SaveAddressResult> {
+  try {
+    await medusaFetch(`/store/carts/${cartId}/address`, {
+      method: "POST",
+      body: JSON.stringify(form),
+      cache: "no-store",
+      ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
+    })
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof MedusaError && err.status === 400) {
+      return {
+        ok: false,
+        message: err.message,
+        // الخادمُ يُعيد **كلَّ** الأخطاء لا أوّلَها، فالنموذجُ يُعلّم
+        // حقولَه مرّةً واحدة.
+        fields: (err.details?.fields ?? []) as AddressFieldError[],
+      }
+    }
+    return {
+      ok: false,
+      message: err instanceof MedusaError ? err.message : "تعذّر حفظ العنوان.",
+      fields: [],
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Saved addresses                                                     */
+/* ------------------------------------------------------------------ */
+
+/** عنوانٌ محفوظٌ في الحساب — نفسُ حقول العنوان الوطنيّ ومعها معرّفُه. */
+export interface SavedAddress extends NationalAddressForm {
+  id: string
+  is_default: boolean
+}
+
+/**
+ * عناوينُ العميل المحفوظة.
+ *
+ * ⚠️ **والخادمُ لا يُعيد إلا المهيكلَ الكامل**: عناوينُ كُتبت من لوحة
+ * Medusa مباشرةً تحمل `address_1` بلا حقولنا، وعرضُها في قائمةِ اختيارٍ
+ * يعني أن يختارها العميلُ فيُرفض طلبُه بعد خطوتين بسببٍ لا يراه.
+ */
+export async function myAddresses(token: string): Promise<SavedAddress[]> {
+  try {
+    const data = await medusaAuth<{ addresses: SavedAddress[] }>(
+      "/store/customers/me/national-addresses",
+      null,
+      token,
+    )
+    return data.addresses ?? []
+  } catch {
+    // قائمةٌ فارغةٌ لا تُسقط الشاشة: من لا عناوينَ له يكتب عنوانَه،
+    // وهو نفسُ ما يفعله من تعذّرت قراءةُ عناوينه.
+    return []
+  }
+}
+
+export type SaveAddressBookResult =
+  | { ok: true; created: boolean }
+  | { ok: false; message: string; fields: AddressFieldError[] }
+
+export async function saveAddressToBook(
+  form: NationalAddressForm,
+  token: string,
+): Promise<SaveAddressBookResult> {
+  try {
+    const data = await medusaFetch<{ created: boolean }>(
+      "/store/customers/me/national-addresses",
+      {
+        method: "POST",
+        body: JSON.stringify(form),
+        cache: "no-store",
+        headers: { authorization: `Bearer ${token}` },
+      },
+    )
+    return { ok: true, created: Boolean(data.created) }
+  } catch (err) {
+    if (err instanceof MedusaError) {
+      return {
+        ok: false,
+        message: err.message,
+        fields: (err.details?.fields ?? []) as AddressFieldError[],
+      }
+    }
+    return { ok: false, message: "تعذّر حفظ العنوان.", fields: [] }
+  }
+}
+
+export async function deleteSavedAddress(id: string, token: string): Promise<boolean> {
+  try {
+    await medusaFetch(`/store/customers/me/national-addresses/${id}`, {
+      method: "DELETE",
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Wishlist                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface WishlistEntry {
+  id: string
+  product_id: string
+  variant_id: string | null
+  title: string
+  handle: string
+  thumbnail: string | null
+  created_at: string
+}
+
+/**
+ * مفضّلةُ العميل (بند ٢٢).
+ *
+ * ⚠️ **والخادمُ يُصفّي المنتجاتِ المحذوفة**: صفُّ منتجٍ حُذف يبقى ولا
+ * يُعرض — فلا مفتاحَ أجنبيَّ إلى جدولٍ ليس لنا، ولا حذفَ صامتٌ عند كلّ
+ * قراءة (منتجٌ أُخفي مؤقّتاً كان سيمحو مفضّلةَ ألفِ عميل).
+ */
+export async function myWishlist(token: string): Promise<WishlistEntry[]> {
+  try {
+    const data = await medusaAuth<{ items: WishlistEntry[] }>(
+      "/store/customers/me/wishlist",
+      null,
+      token,
+    )
+    return data.items ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function addToWishlist(
+  productId: string,
+  token: string,
+  variantId?: string | null,
+): Promise<boolean> {
+  try {
+    await medusaFetch("/store/customers/me/wishlist", {
+      method: "POST",
+      body: JSON.stringify({ product_id: productId, variant_id: variantId ?? null }),
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function removeFromWishlist(productId: string, token: string): Promise<boolean> {
+  try {
+    await medusaFetch(`/store/customers/me/wishlist/${encodeURIComponent(productId)}`, {
+      method: "DELETE",
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reviews                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface ProductReview {
+  id: string
+  rating: number
+  body: string | null
+  created_at: string
+}
+
+export interface ReviewSummary {
+  average: number | null
+  count: number
+}
+
+/**
+ * تقييماتُ منتجٍ **المنشورةُ وحدَها** وملخّصُها (بند ٢٣).
+ *
+ * ⚠️ **ولا يُعيد الخادمُ `customer_id`**: التقييمُ عامٌّ يُقرأ بلا حساب،
+ * ومعرّفُ العميل فيه يربط رأياً بشخصٍ لمن يجمع الردود.
+ */
+export async function getProductReviews(
+  productId: string,
+): Promise<{ reviews: ProductReview[]; summary: ReviewSummary }> {
+  try {
+    const data = await medusaFetch<{ reviews: ProductReview[]; summary: ReviewSummary }>(
+      `/store/products/${encodeURIComponent(productId)}/reviews`,
+      { revalidate: 60 },
+    )
+    return { reviews: data.reviews ?? [], summary: data.summary ?? { average: null, count: 0 } }
+  } catch {
+    // 🔴 سقوطُ التقييمات **لا يُسقط صفحةَ المنتج**: هي إضافةٌ إلى
+    // الصفحة لا شرطٌ لها، ومن يريد الشراءَ يجب أن يستطيع.
+    return { reviews: [], summary: { average: null, count: 0 } }
+  }
+}
+
+export type SubmitReviewResult =
+  | { ok: true; message: string }
+  | { ok: false; code: string; message: string }
+
+export async function submitReview(
+  productId: string,
+  input: { order_line_item_id: string; rating: number; body?: string },
+  token: string,
+): Promise<SubmitReviewResult> {
+  try {
+    const data = await medusaFetch<{ message_ar?: string }>(
+      `/store/products/${encodeURIComponent(productId)}/reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        cache: "no-store",
+        headers: { authorization: `Bearer ${token}` },
+      },
+    )
+    return { ok: true, message: data.message_ar ?? "وصل تقييمُك." }
+  } catch (err) {
+    if (err instanceof MedusaError) {
+      return { ok: false, code: err.code ?? "UNKNOWN", message: err.message }
+    }
+    return { ok: false, code: "UNKNOWN", message: "تعذّر إرسال التقييم." }
+  }
 }
 
 export async function quoteCart(cartId: string): Promise<Quote> {

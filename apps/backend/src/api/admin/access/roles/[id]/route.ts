@@ -36,10 +36,43 @@ export async function PATCH(req: AuthenticatedMedusaRequest<Body>, res: MedusaRe
   const current = await access.listRoleLimits({ role_id: roleId });
   const byPerm = new Map(current.map((l: any) => [l.permission_slug, l]));
 
+  // الصلاحياتُ المعروفة — تُقرأ مرّةً لا مع كلّ حدّ.
+  const knownPermissions = new Set(
+    (await access.listPermissions({})).map((p: any) => p.slug)
+  );
+
   for (const limit of incoming) {
     if (!limit?.permission_slug) {
       return res.status(400).json({
         error: { code: "INVALID_BODY", message_ar: "كلُّ حدٍّ يحتاج permission_slug" },
+      });
+    }
+
+    // 🔴 حدٌّ لصلاحيةٍ لا وجودَ لها **يُكتب ولا يفعل شيئاً**: `can()`
+    // يبحث عن الحدّ بـ`permission_slug`، فحرفٌ زائدٌ في الاسم يجعل
+    // المديرَ يرى سقفاً في لوحته والنظامَ يتصرّف بلا سقف. والخطأُ
+    // صامتٌ تماماً — ولا يُكتشف إلا باستردادٍ كبيرٍ مرّ.
+    if (!knownPermissions.has(limit.permission_slug)) {
+      return res.status(400).json({
+        error: {
+          code: "UNKNOWN_PERMISSION",
+          message_ar: `لا صلاحيةَ باسم «${limit.permission_slug}» — وحدٌّ لصلاحيةٍ غيرِ موجودةٍ لا يحرس شيئاً.`,
+        },
+      });
+    }
+
+    // والعددُ يُفحص كما يُفحص المبلغ. وكان بلا فحص: `max_count = -1`
+    // يُقبل، ثم يقارن `can()` كلَّ عددٍ به فيرفض **كلَّ** دفعة — قفلٌ
+    // تامٌّ يبدو عطلَ نظامٍ لا خطأَ إدخال.
+    if (
+      limit.max_count != null &&
+      (!Number.isInteger(limit.max_count) || limit.max_count < 0)
+    ) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_BODY",
+          message_ar: `max_count عددٌ صحيحٌ غيرُ سالب، ووصل «${limit.max_count}»`,
+        },
       });
     }
     // المبلغُ هللاتٌ صحيحة (ADR-008). وقيمةٌ بكسورٍ **تُرفض** ولا

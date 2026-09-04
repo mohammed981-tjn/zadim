@@ -14,7 +14,7 @@
     "db:generate": "medusa db:generate",
     "seed": "medusa exec ./src/scripts/seed-access.ts && medusa exec ./src/scripts/seed-catalog.ts && medusa exec ./src/scripts/seed-commerce.ts",
     "test": "npm run gates",
-    "gates": "medusa exec ./src/scripts/verify-inventory.ts && medusa exec ./src/scripts/verify-checkout.ts && medusa exec ./src/scripts/verify-orders.ts && medusa exec ./src/scripts/verify-payments.ts && medusa exec ./src/scripts/verify-fulfilment.ts && medusa exec ./src/scripts/verify-dashboard.ts && medusa exec ./src/scripts/verify-storefront.ts && medusa exec ./src/scripts/verify-returns.ts && medusa exec ./src/scripts/verify-marketing.ts && medusa exec ./src/scripts/verify-i18n.ts && medusa exec ./src/scripts/verify-access.ts && medusa exec ./src/scripts/verify-guard.ts && medusa exec ./src/scripts/verify-catalog.ts && medusa exec ./src/scripts/verify-security.ts"
+    "gates": "medusa exec ./src/scripts/verify-inventory.ts && medusa exec ./src/scripts/verify-checkout.ts && medusa exec ./src/scripts/verify-orders.ts && medusa exec ./src/scripts/verify-payments.ts && medusa exec ./src/scripts/verify-fulfilment.ts && medusa exec ./src/scripts/verify-dashboard.ts && medusa exec ./src/scripts/verify-storefront.ts && medusa exec ./src/scripts/verify-returns.ts && medusa exec ./src/scripts/verify-marketing.ts && medusa exec ./src/scripts/verify-i18n.ts && medusa exec ./src/scripts/verify-access.ts && medusa exec ./src/scripts/verify-guard.ts && medusa exec ./src/scripts/verify-catalog.ts && medusa exec ./src/scripts/verify-security.ts && medusa exec ./src/scripts/verify-wiring.ts"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.19.0",

@@ -85,10 +85,37 @@ export type ChainRow = {
 };
 
 /**
+ * رقمُ أوّلِ فاتورةٍ في السلسلة.
+ *
+ * ويُصدَّر لأنه **تعريفٌ مشترك**: `service.ts` يبدأ منه عند الإصدار
+ * (`last ? last.sequence + 1 : FIRST_SEQUENCE`)، وهذا الملفّ يفحص به.
+ * ورقمان مكتوبان في موضعين يفترقان يوماً، فيُصدر الخادمُ سلسلةً
+ * يرفضها فاحصُها.
+ */
+export const FIRST_SEQUENCE = 1;
+
+/**
  * فحصُ سلسلةٍ كاملة: التسلسلُ متّصلٌ، وكلُّ تجزئةٍ تطابق حسابَها.
  *
  * ويُشغَّل على القاعدة كلِّها في البوّابة — **لا على عيّنة**: سلسلةٌ
  * تنكسر في وسطها لا يكشفها فحصُ آخرِ صفٍّ وحده.
+ *
+ * ── 🔴 والصفُّ الأوّلُ يُفحص كغيره — وكان لا يُفحص ────────────────
+ *
+ * كان هنا سطران يُعفيان مطلعَ السلسلة من كلّ شرط:
+ *
+ * ```
+ * const expectedSeq = i === 0 ? sorted[0].sequence : …   // يقارنه بنفسِه
+ * if (i > 0 && row.previous_hash !== expectedPrev)       // ولا يقارنه بالتكوين
+ * ```
+ *
+ * فسلسلةٌ حُذفت فواتيرُها الأولى — أو بدأت من ٥٠٠ — تمرّ `ok: true`.
+ * وهذا **أخطرُ ما يمكن أن يفوت الفاحص**: الفجوةُ في الوسط تُكتشف بمقارنة
+ * الجارين، والفجوةُ في المطلع لا يكشفها إلا ربطُ أوّلِ صفٍّ بشيءٍ خارجه —
+ * ولا يوجد إلا رقمُ البداية وتجزئةُ التكوين. وهما بالضبط ما كان مُعفىً.
+ *
+ * والحدُّ الذي يُفحص عنده يُسمّى صراحةً في الردّ: من يقرأ «السلسلةُ لا
+ * تبدأ من أوّلها» يعرف أن المفقودَ **قبل** ما يراه، لا بين ما يراه.
  */
 export function verifyChain(rows: ChainRow[]): {
   ok: boolean;
@@ -99,14 +126,28 @@ export function verifyChain(rows: ChainRow[]): {
 
   for (let i = 0; i < sorted.length; i++) {
     const row = sorted[i];
-    const expectedSeq = i === 0 ? sorted[0].sequence : sorted[i - 1].sequence + 1;
+    const first = i === 0;
+
+    const expectedSeq = first ? FIRST_SEQUENCE : sorted[i - 1].sequence + 1;
     if (row.sequence !== expectedSeq) {
-      return { ok: false, broken_at: row.sequence, reason: "فجوةٌ في التسلسل" };
+      return {
+        ok: false,
+        broken_at: row.sequence,
+        reason: first
+          ? `السلسلةُ لا تبدأ من أوّلها: أوّلُ رقمٍ ${row.sequence} والمنتظَر ${FIRST_SEQUENCE}`
+          : "فجوةٌ في التسلسل",
+      };
     }
 
-    const expectedPrev = i === 0 ? genesisHash() : sorted[i - 1].invoice_hash;
-    if (i > 0 && row.previous_hash !== expectedPrev) {
-      return { ok: false, broken_at: row.sequence, reason: "تجزئةُ السابقة لا تطابق" };
+    const expectedPrev = first ? genesisHash() : sorted[i - 1].invoice_hash;
+    if (row.previous_hash !== expectedPrev) {
+      return {
+        ok: false,
+        broken_at: row.sequence,
+        reason: first
+          ? "الفاتورةُ الأولى لا تتّصل بتجزئة التكوين"
+          : "تجزئةُ السابقة لا تطابق",
+      };
     }
 
     if (invoiceHash(row.previous_hash, row.payload) !== row.invoice_hash) {

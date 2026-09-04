@@ -1,9 +1,10 @@
 import { Suspense } from "react"
 import Link from "next/link"
-import { ShoppingBag } from "lucide-react"
+import { ShoppingBag, User } from "lucide-react"
 import { Container } from "@/components/container"
 import { SearchBar } from "@/components/search-bar"
 import { loadCart } from "@/lib/cart-actions"
+import { isSignedIn } from "@/lib/auth-actions"
 import { digits } from "@/lib/money"
 import { LanguageSwitch } from "@/components/language-switch"
 import { t, type Locale } from "@/lib/i18n"
@@ -19,6 +20,7 @@ async function cartCount(): Promise<number> {
 
 export async function SiteHeader({ locale }: { locale: Locale }) {
   const count = await cartCount()
+  const signedIn = await isSignedIn()
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -55,6 +57,17 @@ export async function SiteHeader({ locale }: { locale: Locale }) {
               {digits(locale, count)}
             </span>
           ) : null}
+        </Link>
+
+        {/* رابطُ الحساب — ووجهتُه تختلف بحال الزائر: من لم يدخل يُرسل
+            إلى الدخول لا إلى صفحةٍ تردّه إليه. ونقرةٌ ضائعةٌ في ترويسةٍ
+            تُنقر كثيراً كلفةٌ تتكرّر. */}
+        <Link
+          href={`/${locale}/account${signedIn ? "" : "/login"}`}
+          className="relative rounded-lg p-2 text-foreground transition-colors hover:text-primary"
+          aria-label={t(locale, signedIn ? "nav.accountAria" : "account.signIn")}
+        >
+          <User className="size-6" aria-hidden="true" />
         </Link>
 
         <LanguageSwitch locale={locale} />

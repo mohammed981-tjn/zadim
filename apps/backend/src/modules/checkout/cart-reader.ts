@@ -27,6 +27,15 @@ export const CART_FIELDS = [
   "shipping_total",
   "discount_total",
   "shipping_address.city",
+  // الجوّالُ مفتاحُ عميل COD (`payments/cod.ts` → `customerKey`): بلا
+  // قراءتِه هنا يسقط المفتاحُ إلى البريد وحدَه، فيُفلت من عدّ الرفضات
+  // من طلب بجوّالِه ولا بريدَ له — وهم أكثرُ من يطلب بالدفع عند الاستلام.
+  "shipping_address.phone",
+  // 🔴 والعنوانُ الوطنيّ **مهيكلاً** — وهو المصدر، لا `address_1`.
+  // بلا هذا السطر يقرأ `readNationalAddress` عدماً فيُرفض كلُّ إتمامٍ
+  // بـ`ADDRESS_REQUIRED` **ولو كان العنوانُ مكتوباً** — وهو صنفُ العطب
+  // الذي يبدو حارساً يعمل وهو حارسٌ أعمى.
+  "shipping_address.metadata",
   "items.id",
   "items.title",
   "items.variant_id",

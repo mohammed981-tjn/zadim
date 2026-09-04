@@ -44,6 +44,8 @@ export default async function verifyPayments({ container }: ExecArgs) {
   const madePolicies: string[] = [];
   // سياساتٌ كانت حيّةً قبلنا وحُذفت حذفاً ليّناً — تُعاد في `finally`.
   const restoreEnabled: string[] = [];
+  /** إعداداتُ فوترةٍ قائمةٌ نُخفيها لحظةَ فحص «بلا إعدادات» ثم نُعيدها. */
+  const restoreSettings: string[] = [];
   const madeMoney: Array<[string, string]> = [];
   const madeOrders: string[] = [];
   const madeFulfilments: string[] = [];
@@ -344,6 +346,27 @@ export default async function verifyPayments({ container }: ExecArgs) {
       },
     ];
 
+    // ⚠️ **والمقعدُ قد يكون مشغولاً قبلنا** — نفسُ درسِ سياسة COD أعلاه.
+    //
+    // هذا الشاهدُ يقول «بلا إعداداتٍ لا تُصدَر فاتورة»، وهو يفترض قاعدةً
+    // بلا صفِّ إعدادات. وCI يبدأ بقاعدةٍ جديدةٍ فلا يراه أبداً — أمّا
+    // قاعدةُ مطوّرٍ (أو إنتاجٍ) فيها إعداداتٌ مضبوطةٌ فيسقط عندها الشاهدُ
+    // **لأن النظام يعمل**، لا لأنه معطوب. وفاحصٌ يسقط على الحال السليمة
+    // يُعلَّم القارئُ تجاهلَه.
+    //
+    // فتُخفى الإعداداتُ القائمةُ بحذفٍ ليّنٍ **وتُعاد في `finally`** — ولا
+    // تُحذف حذفاً باتّاً: قد تكون إعداداتِ متجرٍ حقيقيّ.
+    const liveSettings = await pg("zadim.zadim_zatca_setting")
+      .whereNull("deleted_at")
+      .select("id");
+    const liveSettingIds = (liveSettings as any[]).map((r) => r.id);
+    if (liveSettingIds.length) {
+      await pg("zadim.zadim_zatca_setting")
+        .whereIn("id", liveSettingIds)
+        .update({ deleted_at: new Date() });
+      restoreSettings.push(...liveSettingIds);
+    }
+
     const beforeConfig = await zatca.issue({
       order_id: `ord_${tag}_x`,
       currency_code: "sar",
@@ -492,6 +515,12 @@ export default async function verifyPayments({ container }: ExecArgs) {
       await pg("zadim.zadim_cod_policy").whereIn("id", restoreEnabled).update({ deleted_at: null });
     }
     await pg("zadim.zadim_zatca_setting").whereIn("id", madeSettings).del();
+    // ثم تُعاد إعداداتُ المتجر — **بعد** حذف إعداداتنا، تماماً كسياسة COD.
+    if (restoreSettings.length) {
+      await pg("zadim.zadim_zatca_setting")
+        .whereIn("id", restoreSettings)
+        .update({ deleted_at: null });
+    }
     // الرفضاتُ والفواتيرُ والعملياتُ تبقى: قواعدُ «لا حذف» تُسقط حذفَها
     // بصمت، وهو المطلوب منها. **وسلسلةُ الفواتير تنمو ولا تُقصّ** —
     // فذاك ما يعنيه أن تكون سلسلة.

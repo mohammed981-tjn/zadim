@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-01 — matches phase 11b (the bilingual store).
+> Last updated: 2026-09-03 — matches the reviews batch.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -47,10 +47,27 @@ Search behaves the same way in both languages: type Arabic on the
 English page and you'll still get results, with the product name shown
 translated.
 
-⚠️ **There is no filtering yet** (by colour or size) on category pages.
-Attributes are recorded on every product and you can see them on its
-page, but the filter controls haven't been added — and we'd rather not
-show a button that does nothing.
+### Filtering on category pages
+
+Every category page has a **Filters** panel beside the results, showing
+that category's own attributes: Electronics shows colour and storage,
+Clothing shows size — each with its own, not one list for everything.
+
+- Picking **two values of the same attribute** means "either": red and
+  blue shows both.
+- Picking **two different attributes** means "both": red and size L shows
+  only red items in size L.
+- The number beside each value is how many you'd get if you picked it —
+  and it stays honest after you choose, so you know where you're going
+  before you click.
+- **Clear all** brings the whole category back.
+
+Your choices are written into the page URL: copy it to a friend and they
+see what you saw, and the browser's back button behaves as you'd expect.
+
+⚠️ If nothing matches, the message says "No products match these filters"
+rather than "category empty" — the first means remove an option, the
+second means there's no stock.
 
 ---
 
@@ -85,10 +102,124 @@ total, with nothing extra.
 
 ---
 
+## Your account
+
+You can buy **as a guest with no account** — that works fully. An account
+adds two things: **your order history** and **your address book**.
+
+| | |
+|---|---|
+| Create account | `/en/account/register` — your name, email and a password |
+| Sign in | `/en/account/login` |
+| My account | `/en/account` — your details, **your addresses** and **your orders** with each status |
+
+⚠️ **If your email already has an account here you cannot check out as a
+guest with it** — you'll be asked to sign in. The reason: the order would
+be filed into that account's history, and someone else's order must not
+land there.
+
+### Favourites
+
+Tap the **heart** on any product to add it to your favourites; they're
+all in `/en/account`.
+
+**It isn't a bookmark list**: when the price of something in it drops,
+we'll tell you. That's what it's for.
+
+⚠️ **It needs an account** — because the news needs an inbox to reach.
+Keeping favourites in your browser alone would give you the list and
+deny you the alert, while you believed you were subscribed to it.
+
+⚠️ **The alerts haven't started yet**: the messaging provider (email /
+SMS) isn't connected, so alerts are queued and not sent. We won't tell
+you one was sent when it wasn't. The day it's connected they'll reach
+you with nothing to do on your side.
+
+---
+
+### Reviews
+
+Every product page shows its reviews, with the average and the count.
+
+**No review without a purchase.** So reviews are written from **your
+order page**, not the product page: open the order from `/en/account`
+and rate each item you bought in it. The rule is enforced in the database
+itself — not in the form — and it checks three things: that the purchase
+happened, that it was **yours**, and that it was **for this exact
+product**.
+
+⚠️ **Published after review**: yours won't appear immediately. Product
+pages show up in search results, and publishing any text instantly
+without moderation turns them into a noticeboard. We tell you this as
+you write, not afterwards, so you don't go looking for your review and
+assume it was lost.
+
+⚠️ One review per item you bought. If you bought the same item twice you
+can review it twice — two experiences at two times.
+
+---
+
+### Your addresses
+
+At checkout there's a **"Save this address to my account"** box — and it
+is **unticked** unless you tick it. The reason: you might be sending a
+gift to a friend's address, and saving every address you type fills your
+book with addresses you can't place.
+
+Next time, your saved addresses appear above the form, so you pick one
+with a click — or pick **"New address"** and type a different one.
+
+You can delete any address from `/en/account`; you'll be asked to confirm.
+
+⚠️ **An incomplete address is not saved**: saved addresses are validated
+exactly as strictly as ones typed at checkout. A half-saved address would
+mean picking it confidently, then having your order refused at the last
+step.
+
+⚠️ The limit is ten addresses. Typing an address identical to a saved one
+does not create a second copy.
+
+⚠️ **Your map location isn't saved yet** — an address is text, not a pin.
+That changes later.
+
+---
+
 ## Checking out
 
 Three steps: **address**, then **shipping method**, then **review and
 pay**.
+
+### Your national address
+
+We ask for the full **Saudi National Address** as registered with Saudi
+Post — not a single address line:
+
+| Field | Example | Note |
+|---|---|---|
+| First and last name | Mohammed Alotaibi | |
+| Mobile number | 0555000111 | **How the courier reaches you** |
+| Building number | 2743 | Four digits |
+| Street name | King Fahd Road | |
+| District | Al Olaya | **Couriers rely on it more than the street** |
+| City | Riyadh | |
+| Postal code | 12211 | Five digits |
+| Additional number | 6889 | Four digits — pinpoints your entrance |
+| Short address | RRRD2929 | **Optional** |
+| Email | | **Optional** — for your order confirmation |
+
+You can find all of these in the **National Address** app or at
+[splonline.com.sa](https://splonline.com.sa).
+
+⚠️ **The screen will not move on to shipping until the store accepts
+your address.** If a field is missing or a number has the wrong length,
+the reason appears under that field — and every wrong field is marked at
+once, not one at a time.
+
+Arabic-Indic and Western digits are both accepted (`٢٧٤٣` and `2743` are
+the same), and your mobile number is accepted in any format you write it
+(`0555…` or `+966555…`).
+
+### Review
 
 The review step shows your final total, and you press **"Confirm
 order"**. Pressing it means you agree to pay the amount shown.
