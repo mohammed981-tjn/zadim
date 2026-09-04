@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { WAREHOUSE_MODULE } from "./index";
 import type WarehouseModuleService from "./service";
 import { FINANCE_MODULE } from "../finance";

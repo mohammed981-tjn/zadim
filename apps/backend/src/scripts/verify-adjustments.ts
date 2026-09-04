@@ -235,16 +235,22 @@ export default async function verifyAdjustments({ container }: ExecArgs) {
     });
     if (impossible.ok) {
       await approveAdjustment(container, impossible.id, BOB);
-      let applied2: any = null;
+      // ⚠️ **ويُقاس الطرفان**: أن النداءَ رُفض، **وأن الرصيدَ لم
+      // يتغيّر**. فقراءةُ الرصيد وحدَها تمرّ لو نجح النداءُ وصادف أن
+      // الرصيدَ عاد إلى قيمته بسببٍ آخر؛ وقراءةُ الردّ وحدَها تمرّ
+      // على ردٍّ يمنع وأثرٍ يقع خلفه.
+      let refused = false;
       try {
-        applied2 = await applyAdjustment(container, impossible.id, BOB);
-      } catch (e) {
-        applied2 = { threw: String((e as Error).message) };
+        const attempt = await applyAdjustment(container, impossible.id, BOB);
+        refused = attempt.ok === false;
+      } catch {
+        // رميٌ من الطبقة السفلى — ورفضٌ أيضاً.
+        refused = true;
       }
       const afterNeg = await stockNow();
-      afterNeg === cur
-        ? pass(`ولا رصيدَ سالب: تسويةٌ تُنزله دون الصفر تُرفض والرصيدُ ${afterNeg} كما هو`)
-        : fail(`نزل الرصيدُ إلى ${afterNeg} (كان ${cur})`);
+      refused && afterNeg === cur
+        ? pass(`ولا رصيدَ سالب: النداءُ رُفض **والرصيدُ ${afterNeg} كما هو**`)
+        : fail(`السالب: رُفض=${refused} والرصيدُ ${afterNeg} (كان ${cur})`);
       await rejectAdjustment(container, impossible.id, BOB, "تنظيفُ بوّابة").catch(() => {});
     }
   } catch (e) {
