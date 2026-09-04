@@ -174,7 +174,10 @@ jobs:
       - name: رفعُ المخرجات
         uses: actions/upload-artifact@v4
         with:
-          name: zadim-android-${{ steps.keystore.outputs.signed == 'yes' && 'signed' || 'unsigned' }}
+          # ⚠️ الاسمُ يقول **ما يُثبَّت**، لا حالةَ نسخةِ الإصدار وحدَها.
+          # كان «unsigned» فقُرئ على أن الحزمةَ كلَّها لا تُثبَّت — وفيها
+          # نسخةُ تشخيصٍ موقَّعةٌ تُثبَّت. واسمٌ يضلّل أسوأُ من اسمٍ ناقص.
+          name: zadim-android-${{ steps.keystore.outputs.signed == 'yes' && 'release-signed' || 'debug-installable' }}
           path: |
             apps/android/app/build/outputs/apk/debug/*.apk
             apps/android/app/build/outputs/apk/release/*.apk
