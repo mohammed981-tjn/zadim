@@ -84,8 +84,16 @@ jobs:
 
       # ⚠️ **المفتاحُ لا يُكتب في المستودع ولا يُطبع في سجلّ.** يصل
       # مُرمَّزاً بـbase64 في سرٍّ، ويُفكّ إلى ملفٍّ في مساحةِ التشغيلة
-      # التي تُمحى بانتهائها. وغيابُ السرِّ **لا يُسقط البناء** — يُخرج
-      # نسخةً غيرَ موقَّعةٍ تصلح للتجريب لا للرفع، ويقولها المخرَجُ صراحة.
+      # التي تُمحى بانتهائها.
+      #
+      # 🔴 **وغيابُ السرِّ لا يُخرج شيئاً يُثبَّت.** كان مكتوباً هنا أن
+      # النسخةَ غيرَ الموقَّعة «تصلح للتجريب» — **وهذا خطأ**: أندرويد
+      # يرفض أيَّ حزمةٍ بلا توقيع، بالنقر وبـ`adb install` سواءً، برسالة
+      # «الحزمة تبدو غير صالحة». وقد قيس على جهازٍ حقيقيّ.
+      #
+      # فتُبنى **نسخةُ تشخيصٍ دائماً** (`assembleDebug`) — يوقّعها Gradle
+      # بمفتاحِ تشخيصٍ يولّده بنفسه، **وهي وحدَها ما يُثبَّت** قبل أن
+      # يملك المالكُ مفتاحَه.
       - name: فكُّ مفتاح التوقيع
         id: keystore
         env:
@@ -109,7 +117,7 @@ jobs:
           ./gradlew --no-daemon $ZADIM_HOST_ARG \
             -Pzadim.versionName="${{ inputs.versionName || '1.0.0' }}" \
             -Pzadim.versionCode="${{ inputs.versionCode || '1' }}" \
-            assembleRelease bundleRelease
+            assembleDebug assembleRelease bundleRelease
 
       # فحصٌ بعد البناء: النطاقُ الذي دخل الحزمةَ فعلاً — لا الذي ظنناه.
       # وقد كلّف هذا الفرقُ في هذا المستودع قبلاً: بناءٌ أخضرُ على قيمةٍ
@@ -134,11 +142,41 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✅ الحزمةُ مبنيّةٌ على $ZADIM_HOST في المواضع الثلاثة."
           exit "$fail"
 
+      # 🔴 **الحارسُ الذي لم يكن موجوداً.**
+      #
+      # سقطت البوّابةُ خضراءَ وأخرجت حزمةً **لا تُثبَّت**، لأن لا شيءَ
+      # كان يسأل «أهي موقَّعة؟». والفحصُ السابقُ سأل عن النطاق وحدَه.
+      #
+      # فيُسأل الآن `apksigner` نفسُه — وهو الذي يسأله أندرويد — وتُطبع
+      # بصمةُ من وقّع. **ويسقط البناءُ إن لم تكن نسخةُ التشخيص موقَّعة**،
+      # لأنها الوحيدةُ الموعودةُ بالتثبيت.
+      - name: التحقّق من التوقيع
+        run: |
+          set -uo pipefail
+          SIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          fail=0
+          for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+            [ -e "$apk" ] || continue
+            echo "── $(basename "$apk")"
+            if "$SIGNER" verify --print-certs "$apk" > "$RUNNER_TEMP/sig.txt" 2>&1; then
+              echo "   ✅ موقَّعة — تُثبَّت"
+              grep -i "SHA-256 digest" "$RUNNER_TEMP/sig.txt" | head -1 | sed 's/^/   /'
+            else
+              echo "   ⛔ غيرُ موقَّعة — أندرويد يرفضها بـ«الحزمة تبدو غير صالحة»"
+              case "$apk" in
+                *debug*) fail=1 ;;
+                *) echo "   (نسخةُ الإصدار: متوقَّعٌ بلا سرِّ مفتاح — ترفع إلى Play بعد التوقيع)" ;;
+              esac
+            fi
+          done
+          exit "$fail"
+
       - name: رفعُ المخرجات
         uses: actions/upload-artifact@v4
         with:
           name: zadim-android-${{ steps.keystore.outputs.signed == 'yes' && 'signed' || 'unsigned' }}
           path: |
+            apps/android/app/build/outputs/apk/debug/*.apk
             apps/android/app/build/outputs/apk/release/*.apk
             apps/android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
