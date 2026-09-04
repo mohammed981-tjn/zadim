@@ -229,27 +229,9 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: apps/android
-          # ⚠️ السكربتُ يعمل بـ`sh` (dash) لا bash — والأداةُ لا تقول ذلك.
-          # فلا `pipefail` ولا `[[ ]]`: أوّلُ سطرٍ فيه bash-ism يُسقط
-          # الخطوةَ **قبل أن يُثبَّت التطبيق**، فتبدو حمرةً في مكانٍ
-          # وسببُها في آخر. (قيس: «Illegal option -o pipefail».)
-          script: |
-            set -u
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb logcat -c
-            adb shell am start -n co.zadim.store/com.google.androidbrowserhelper.trusted.LauncherActivity
-            sleep 10
-            adb logcat -d > "$RUNNER_TEMP/logcat.txt"
-            if adb shell pidof co.zadim.store > /dev/null 2>&1; then
-              echo "✅ التطبيقُ فُتح وما زال حيّاً بعد عشرِ ثوانٍ."
-            else
-              echo "⛔ التطبيقُ انهار عند الفتح — وهذا سببُه:"
-              echo "────────────────────────────────────────────"
-              grep -B2 -A40 -E "FATAL EXCEPTION|AndroidRuntime.*E |Process.*co\.zadim\.store.*died" \
-                "$RUNNER_TEMP/logcat.txt" | head -80
-              echo "────────────────────────────────────────────"
-              exit 1
-            fi
+          # ⚠️ **الأداةُ تشغّل كلَّ سطرٍ وحدَه بـ`sh -c`** — لا كسكربتٍ
+          # واحد، ولا تقول ذلك. فالمنطقُ في ملفٍّ يُنادى بسطر.
+          script: bash scripts/smoke.sh
 
       - name: رفعُ المخرجات
         uses: actions/upload-artifact@v4
