@@ -1,5 +1,11 @@
 import { MedusaService } from "@medusajs/framework/utils";
-import { LocationProfile, StockMovement, StockAlertRule } from "./models";
+import {
+  LocationProfile,
+  StockMovement,
+  StockAlertRule,
+  AdjustmentPolicy,
+  StockAdjustment,
+} from "./models";
 import {
   planAllocation,
   type AllocationInput,
@@ -28,7 +34,38 @@ class WarehouseModuleService extends MedusaService({
   LocationProfile,
   StockMovement,
   StockAlertRule,
+  AdjustmentPolicy,
+  StockAdjustment,
 }) {
+  /**
+   * سياسةُ التسوية — **من صفّها لا من الكود** (بند ٤٨).
+   *
+   * ⚠️ وجدولٌ فارغٌ يُعيد حدّاً افتراضياً **لا انفتاحاً**: هجرةٌ لم
+   * تُشغَّل يجب ألّا تجعل كلَّ تسويةٍ تمرّ بلا موافقة — وهو أسوأُ
+   * أنواع العطل، لأن الشاشةَ تبدو سليمة.
+   */
+  async adjustmentPolicy(): Promise<{
+    threshold_quantity: number;
+    threshold_value_halalas: number;
+    is_enabled: boolean;
+  }> {
+    const [row] = (await this.listAdjustmentPolicies({}, { take: 1 })) as any[];
+    if (!row) return { threshold_quantity: 10, threshold_value_halalas: 50000, is_enabled: true };
+    return {
+      threshold_quantity: Number(row.threshold_quantity),
+      threshold_value_halalas: Number(row.threshold_value_halalas),
+      is_enabled: row.is_enabled !== false,
+    };
+  }
+
+  /** التسوياتُ المنتظِرةُ موافقةً — يقرؤها من يوافق. */
+  async pendingAdjustments(limit = 100) {
+    return this.listStockAdjustments(
+      { state: "pending" },
+      { take: limit, order: { created_at: "ASC" } }
+    );
+  }
+
   /** خطّةُ الشحن: من أيّ مستودعٍ يخرج كلُّ بند. */
   planAllocation(input: AllocationInput): AllocationPlan {
     return planAllocation(input);

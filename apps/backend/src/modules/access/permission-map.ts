@@ -131,6 +131,17 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // الفريقَ بتنبيهاتٍ فيتجاهلها — كلاهما قرارُ تشغيلٍ لا قرارُ قراءة.
   { pattern: /^\/warehouse\/alert-rules(\/|$)/, methods: ["GET"], permission: "inventory.read" },
   { pattern: /^\/warehouse\/alert-rules(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "locations.manage" },
+  // ── تسوياتُ المخزون — **والموافقةُ صلاحيةٌ أخرى** ──────────────
+  //
+  // 🔴 `inventory.adjust` يطلب، و`inventory.stocktake` يوافق ويطبّق.
+  // وتركيزُهما في صلاحيةٍ واحدةٍ يجعل «أربعُ عيونٍ» عبارةً في وثيقة:
+  // من يملك الاثنين يطلب ويوافق على نفسه — والقيدُ في القاعدة يمنع
+  // ذلك بالهويّة، والصلاحيةُ تمنعه بالدور. **وطبقتان لا واحدة.**
+  { pattern: /^\/warehouse\/adjustments\/[^/]+\/(approve|apply)(\/|$)/, methods: ["POST"], permission: "inventory.stocktake" },
+  { pattern: /^\/warehouse\/adjustments(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/warehouse\/adjustments(\/|$)/, methods: ["POST"], permission: "inventory.adjust" },
+  { pattern: /^\/warehouse\/adjustment-policy(\/|$)/, methods: ["GET"], permission: "settings.read" },
+  { pattern: /^\/warehouse\/adjustment-policy(\/|$)/, methods: ["PATCH", "POST"], permission: "settings.manage" },
   { pattern: /^\/warehouse\/profiles(\/|$)/, methods: ["GET"], permission: "inventory.read" },
   { pattern: /^\/warehouse\/profiles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "locations.manage" },
   // معاينةُ الخطة قراءةٌ لا تحجز شيئاً — لكنها تكشف توزّعَ المخزون على
