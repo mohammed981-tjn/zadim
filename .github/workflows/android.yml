@@ -10,14 +10,27 @@
 # فهذا الملفُّ ليس تسهيلاً: **هو المكانُ الذي يُعرف فيه أن المشروع يُبنى
 # أصلاً**. وكلُّ ما قبله كودٌ مكتوبٌ لم يُترجم.
 #
-# ── ولماذا `workflow_dispatch` وحدَه ──────────────────────────────
+# ── ولماذا مُطلِقان لا واحد ───────────────────────────────────────
 #
-# لأن التطبيقَ لا يتغيّر مع الكود: هو نافذةٌ على النطاق، وتغيُّرُ المتجر
-# لا يغيّره. فبناؤه في كلّ دفعةٍ دقائقُ تُحرق على ملفٍّ لم يُمسّ.
-# ويُبنى حين يُطلب: قبل رفعٍ إلى Play، أو بعد تغيير النطاق أو الأيقونة.
+# `workflow_dispatch` هو المقصود: التطبيقُ لا يتغيّر مع الكود — هو نافذةٌ
+# على النطاق، وتغيُّرُ المتجر لا يغيّره. فبناؤه في كلّ دفعةٍ دقائقُ تُحرق
+# على ملفٍّ لم يُمسّ. ويُبنى حين يُطلب: قبل رفعٍ إلى Play، أو بعد تغيير
+# النطاق أو الأيقونة.
+#
+# ⚠️ **لكنّ `workflow_dispatch` وحدَه لا يُشغَّل إلا بعد أن يصل الفرعَ
+# الافتراضيّ** — جيت هوب يردّ ٤٠٤ على استدعائه من فرعِ عمل. أي أن مشروعَ
+# أندرويد كان سيُدمج **وهو لم يُترجَم قطّ**، وهو بعينه ما تمنعه القاعدةُ
+# الحاكمة في `CLAUDE.md`: «لا يُعدّ بندٌ منفَّذاً لأن الكودَ مكتوب».
+#
+# فأُضيف `pull_request` **بمرشّحِ مسارات**: لا يعمل إلا حين تُمسّ ملفّاتُ
+# أندرويد أو هذا الملفُّ نفسُه — أي في الدفعة التي تحتاج البرهانَ وحدَها.
 name: تطبيق أندرويد (APK/AAB)
 
 on:
+  pull_request:
+    paths:
+      - "apps/android/**"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
     inputs:
       host:
@@ -56,12 +69,18 @@ jobs:
       # النطاقُ من مدخل التشغيلة إن أُعطي، وإلا فالمكتوبُ في
       # `gradle.properties`. فتشغيلةُ تجريبٍ على نطاقٍ آخر لا تحتاج التزاماً.
       - name: تحديد النطاق
+        env:
+          INPUT_HOST: ${{ inputs.host }}
         run: |
-          if [ -n "${{ inputs.host }}" ]; then
-            echo "ZADIM_HOST_ARG=-Pzadim.host=${{ inputs.host }}" >> "$GITHUB_ENV"
-          else
+          HOST="$INPUT_HOST"
+          if [ -z "$HOST" ]; then
+            HOST=$(sed -n 's/^zadim\.host=//p' gradle.properties)
             echo "ZADIM_HOST_ARG=" >> "$GITHUB_ENV"
+          else
+            echo "ZADIM_HOST_ARG=-Pzadim.host=$HOST" >> "$GITHUB_ENV"
           fi
+          echo "ZADIM_HOST=$HOST" >> "$GITHUB_ENV"
+          echo "النطاق: $HOST"
 
       # ⚠️ **المفتاحُ لا يُكتب في المستودع ولا يُطبع في سجلّ.** يصل
       # مُرمَّزاً بـbase64 في سرٍّ، ويُفكّ إلى ملفٍّ في مساحةِ التشغيلة
@@ -88,8 +107,8 @@ jobs:
           ZADIM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           ./gradlew --no-daemon $ZADIM_HOST_ARG \
-            -Pzadim.versionName='${{ inputs.versionName }}' \
-            -Pzadim.versionCode='${{ inputs.versionCode }}' \
+            -Pzadim.versionName="${{ inputs.versionName || '1.0.0' }}" \
+            -Pzadim.versionCode="${{ inputs.versionCode || '1' }}" \
             assembleRelease bundleRelease
 
       # فحصٌ بعد البناء: النطاقُ الذي دخل الحزمةَ فعلاً — لا الذي ظنناه.
@@ -97,16 +116,28 @@ jobs:
       # غيرِ التي في الرأس.
       - name: التحقّق من النطاق داخل الحزمة
         run: |
+          set -euo pipefail
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
           echo "الحزمة: $APK"
-          unzip -o -q "$APK" resources.arsc -d "$RUNNER_TEMP/arsc" || true
-          "$AAPT" dump strings "$APK" | grep -i "https://" | head -20
+          "$AAPT" dump resources "$APK" > "$RUNNER_TEMP/res.txt"
+
+          # ثلاثةُ ثوابتَ لا يُقبل بناءٌ بلا واحدٍ منها — وكلُّها تخرج
+          # من `zadim.host` نفسِه، فاختلافُ اثنين يعني بناءً على قيمتين.
+          fail=0
+          grep -q "https://$ZADIM_HOST/ar" "$RUNNER_TEMP/res.txt" || { echo "⛔ launch_url ليس على النطاق"; fail=1; }
+          grep -q "\"site\": \"https://$ZADIM_HOST\"" "$RUNNER_TEMP/res.txt" || { echo "⛔ asset_statements ليس على النطاق"; fail=1; }
+          grep -q "^ *(string8) *\"$ZADIM_HOST\"" "$RUNNER_TEMP/res.txt" \
+            || grep -q "\"$ZADIM_HOST\"" "$RUNNER_TEMP/res.txt" \
+            || { echo "⛔ host غيرُ موجودٍ في الموارد"; fail=1; }
+
+          [ "$fail" -eq 0 ] && echo "✅ الحزمةُ مبنيّةٌ على $ZADIM_HOST في المواضع الثلاثة."
+          exit "$fail"
 
       - name: رفعُ المخرجات
         uses: actions/upload-artifact@v4
         with:
-          name: zadim-android-${{ inputs.versionName }}-${{ steps.keystore.outputs.signed == 'yes' && 'موقّع' || 'غير-موقّع' }}
+          name: zadim-android-${{ steps.keystore.outputs.signed == 'yes' && 'signed' || 'unsigned' }}
           path: |
             apps/android/app/build/outputs/apk/release/*.apk
             apps/android/app/build/outputs/bundle/release/*.aab
