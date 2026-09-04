@@ -33,13 +33,17 @@ and conclude the system is broken.
 | Low-stock alert thresholds and current breaches | ✅ `/app/zadim/alert-rules` |
 | The stock movement ledger (read-only) | ✅ `/app/zadim/movements` |
 | Warehouse profiles (which location ships) | ✅ `/app/zadim/warehouse-profiles` |
+| Roles and who holds them | ✅ `/app/zadim/roles` |
+| Audit log | ✅ `/app/zadim/audit` |
+| Review moderation (publish/reject) | ✅ `/app/zadim/reviews` |
+| Return policy · inspection records | ✅ `/app/zadim/returns-policy` |
+| Notifications: log and retry policy | ✅ `/app/zadim/notifications` |
+| Order statuses · event outbox | ✅ `/app/zadim/order-flow` |
+| Attributes · SEO · redirects · synonyms · translations | ✅ `/app/zadim/catalog` |
+| Home page sections (blocks) | ✅ `/app/zadim/cms-blocks` |
+| Parcels (weight and dimensions) | ✅ `/app/zadim/parcels` |
 | Products · prices · stock · orders · customers | ✅ Medusa's own screens |
-| Home page sections (blocks) | ⚙️ API only |
-| **English translation of content** | ⚙️ API only |
-| Return policy · inspection records | ⚙️ API only |
 | Marketing: segments and templates | ⚙️ API only |
-| Roles and permissions · audit log | ⚙️ API only |
-| Search synonyms · SEO and redirects | ⚙️ API only |
 
 ⚙️ = ask a developer to run it, or wait for its screen. The capability
 exists and is tested; what's missing is its interface.
@@ -361,6 +365,129 @@ Price rises or mass edits.
 🔴 **All of them can be undone**: the previous value of every row is
 saved before the change runs, and the undo button restores it. A mistake
 in a file of a thousand items is not a catastrophe.
+
+---
+
+## Roles and assignment — `/app/zadim/roles`
+
+Who can do what, and who holds it.
+
+- **Permissions are read here, not edited.** Granting a role a new
+  permission is an architectural decision that goes through code review,
+  not a late-night click in a panel.
+- **What you can tune is the limit**: an amount ceiling, a number of
+  times, or "needs a second approval". Raise it when you trust, lower it
+  when you doubt.
+- ⚠️ **A limit on a misspelled permission is rejected** — accepted, it
+  would look like a ceiling in your panel and guard nothing, and you'd
+  only find out after a large refund went through.
+- 🔴 **The last super admin cannot be revoked**: a system with no super
+  admin cannot repair itself — nobody can grant roles afterwards. Assign
+  the role to someone else first.
+
+---
+
+## Audit log — `/app/zadim/audit`
+
+Who did what, and when. **Read-only** — neither this screen nor any panel
+route writes to it or deletes from it. A ledger the panel can edit is not
+an audit ledger.
+
+Filter by entity, entity id, actor or action — the log is read to answer a
+specific question, not to be scrolled.
+
+---
+
+## Reviews — `/app/zadim/reviews`
+
+🔴 **A review does not appear on the product page until you publish it
+here.** It starts as "awaiting moderation" by design: it is public text on
+an indexed page.
+
+- **Publish** what is fine, **reject** what is not — **and a rejection
+  needs a reason**: its author will ask, and without one the next
+  moderator starts the judgement over.
+
+---
+
+## Returns — `/app/zadim/returns-policy`
+
+Two halves: the **policy** (day window · are opened items accepted? ·
+minimum order total · who pays return shipping) and the **inspection**
+(what came back, and in what condition).
+
+- If no policy has been set yet the screen says so plainly — empty fields
+  are not zeros, they were never filled.
+- **Inspections are append-only**, and a correction is a new row. The
+  inspector is taken from your session, not typed into the screen — so no
+  judgement is ever recorded under someone else's name.
+- Only inspected goods return to the shelf: "releasable" is a number the
+  server computes.
+
+---
+
+## Notifications — `/app/zadim/notifications`
+
+⚠️ **"Queued" means "never sent", not "on its way"** — no messaging
+provider is connected yet. The number becomes meaningful the day one is.
+
+- **"Dead"** means: attempts exhausted, it will never be retried.
+- The recipient is **masked** on purpose — this is a diagnostic log, not
+  an address book.
+- **Turning off draining is a valve, not an off switch**: the day the
+  provider goes down, stop hammering it until it recovers. Messages wait;
+  they are not lost.
+
+---
+
+## Order flow — `/app/zadim/order-flow`
+
+Opened for one question: **"why didn't that notification arrive?"**
+
+- **Event outbox**: an undelivered event means everything downstream of it
+  did not happen — no notification, no stock update, no invoice. **An
+  empty list here is the healthy state.**
+- **Allowed transitions**: read-only. This is the state machine itself,
+  and changing it goes through a reviewed migration — unlike the return
+  policy, which is a merchant's decision.
+
+---
+
+## Catalog — `/app/zadim/catalog`
+
+Five sections in one screen: **attributes · SEO · redirects · synonyms ·
+translations**.
+
+- **Synonyms** make someone searching "jawwal" find "phone".
+- **Redirects** are sorted by hit count — the most-hit one is the broken
+  link that actually costs you.
+- **There is no delete button here** because the backend route has none —
+  and a button that promises what it cannot do is worse than no button.
+
+---
+
+## Page blocks — `/app/zadim/cms-blocks`
+
+What the customer sees on the home page, in order. **One call changes it —
+no build, no deploy.**
+
+- Reorder with the ↑↓ arrows.
+- **Hidden blocks are shown too**: a block you cannot see in the panel
+  will never be switched back on.
+- The payload is JSON — malformed text is rejected before it is sent.
+
+---
+
+## Parcels — `/app/zadim/parcels`
+
+Weight and dimensions **after the parcel is sealed and labelled** — the
+weight of an open box is not the weight of what ships.
+
+- Weight in whole grams (like halalas): the carrier prices by weight, and
+  a float is rounded in one place and truncated in another.
+- **Barcodes are unique**: two parcels sharing one means a waybill
+  pointing at a different parcel — and the shipment reaches the wrong
+  person.
 
 ---
 
