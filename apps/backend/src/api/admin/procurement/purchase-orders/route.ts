@@ -120,17 +120,15 @@ export async function POST(req: AuthenticatedMedusaRequest<Body>, res: MedusaRes
     });
   }
 
-  const [order] = (await procurement.createPurchaseOrders([
-    {
-      supplier_id: supplierId,
-      location_id: locationId,
-      status: "draft",
-      expected_at: body.expected_at ? new Date(body.expected_at) : null,
-      note: body.note ?? null,
-      created_by: (req as any).auth_context?.actor_id ?? null,
-      created_by_label: (req as any).auth_context?.app_metadata?.email ?? null,
-    },
-  ] as any)) as any[];
+  const order = (await procurement.createPurchaseOrders({
+    supplier_id: supplierId,
+    location_id: locationId,
+    status: "draft",
+    expected_at: body.expected_at ? new Date(body.expected_at) : null,
+    note: body.note ?? null,
+    created_by: (req as any).auth_context?.actor_id ?? null,
+    created_by_label: (req as any).auth_context?.app_metadata?.email ?? null,
+  } as any)) as any;
 
   await procurement.createPurchaseOrderLines(
     prepared.map((l) => ({ ...l, purchase_order_id: order.id })) as any
