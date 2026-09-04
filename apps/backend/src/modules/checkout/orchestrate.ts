@@ -13,6 +13,7 @@ import { PAYMENTS_MODULE } from "../payments";
 import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
 import { recordRedemptions } from "../promotions/apply";
+import { postSaleJournal } from "../ledger/post";
 import { cartLines, currentPrices, readCart } from "./cart-reader";
 import { readNationalAddress } from "./national-address";
 
@@ -352,7 +353,18 @@ export async function runCheckout(
 
     const { data: orders } = await query.graph({
       entity: "order",
-      fields: ["id", "display_id", "currency_code", "total"],
+      fields: [
+        "id",
+        "display_id",
+        "currency_code",
+        "total",
+        // مكوّناتُ القيد المحاسبيّ — تُجلب مع المجموع في نفس النداء:
+        // نداءٌ ثانٍ بعد ثوانٍ قد يقرأ طلباً عُدّل.
+        "item_subtotal",
+        "shipping_subtotal",
+        "tax_total",
+        "discount_total",
+      ],
       filters: { id: orderId },
     });
     const order = orders[0] as any;
@@ -368,6 +380,37 @@ export async function runCheckout(
       order_id: orderId,
       customer_id: (cart as any)?.customer_id ?? null,
     });
+
+    // 🔴 **قيدُ البيع — ولا يُسقط الطلب إن تعذّر.**
+    //
+    // والقرارُ هنا موازنةٌ بين سيّئين. فالطلبُ وقع والمالُ التُزم به
+    // والمخزونُ حُجز؛ ورميُ الطلب لأن الدفترَ لم يُكتب يُخسر بيعاً
+    // وقع فعلاً. **والدفترُ الناقصُ يُكتشف** — الطلبُ بلا قيدٍ يظهر
+    // في فحص المطابقة (`verify-ledger`) ويُقيَّد بأثرٍ رجعيّ، لأن
+    // مكوّناتِه كلَّها باقيةٌ في الطلب.
+    //
+    // ⚠️ وهذا **يختلف عن الفاتورة**: الفائتُ منها لا يدخل السلسلةَ
+    // بأثرٍ رجعيّ أبداً. فما يُستدرَك يُؤجَّل، وما لا يُستدرَك لا.
+    if (order) {
+      try {
+        await postSaleJournal(scope, {
+          id: orderId,
+          currency_code: order.currency_code ?? cart.currency_code,
+          total: order.total,
+          item_subtotal: order.item_subtotal,
+          shipping_subtotal: order.shipping_subtotal,
+          tax_total: order.tax_total,
+          discount_total: order.discount_total,
+        });
+      } catch (err) {
+        // ولا يُبتلع صامتاً: بلا سطرٍ في السجلّ يصير «طلبٌ بلا قيد»
+        // لغزاً يُكتشف بعد شهرٍ في تسوية.
+        const logger = scope.resolve(ContainerRegistrationKeys.LOGGER);
+        logger.error(
+          `[zadim] تعذّر قيدُ البيع للطلب ${orderId}: ${(err as Error).message}`
+        );
+      }
+    }
 
     return finish(
       {
