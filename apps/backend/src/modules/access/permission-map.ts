@@ -137,6 +137,23 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // المستودعات، وذاك ما لا يُعرض لمن لا يقرأ المخزون أصلاً.
   { pattern: /^\/warehouse\/allocate(\/|$)/, methods: ["POST"], permission: "inventory.read" },
 
+  // ── وحدة procurement (بندا ٣٢ و٣٣) ──────────────────────────────
+  //
+  // 🔴 والفصلُ هنا مقصودٌ ومكتوبٌ في `05-rbac-matrix.md`: **من يُصدر
+  // الأمرَ ليس من يعتمده**. مديرُ المخزون ينشئ ويستلم، والمالية تعتمد.
+  // وتركيزُهما في يدٍ واحدة يجعل «اشترِ من نفسك» مساراً كاملاً: أمرٌ
+  // يُنشأ ويُعتمد ويُستلَم بلا عينٍ ثانية.
+  //
+  // ⚠️ و**الاستلامُ تحت `inventory.adjust` لا تحت `purchase_orders`**:
+  // هو تغييرُ مخزونٍ حقيقيٍّ على الرفّ، ومن لا يُؤتمن على التسوية لا
+  // يُؤتمن على أن يقول «وصلت مئةٌ» وهي تسعون.
+  { pattern: /^\/procurement\/suppliers(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/procurement\/suppliers(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "suppliers.manage" },
+  { pattern: /^\/procurement\/purchase-orders\/[^/]+\/receive(\/|$)/, methods: ["POST"], permission: "inventory.adjust" },
+  { pattern: /^\/procurement\/purchase-orders\/[^/]+\/place(\/|$)/, methods: ["POST"], permission: "purchase_orders.approve" },
+  { pattern: /^\/procurement\/purchase-orders(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/procurement\/purchase-orders(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "purchase_orders.create" },
+
   // ── وحدة orders ─────────────────────────────────────────────────
   // كلاهما **قراءةٌ فقط**: جدولُ الانتقالات يُغيَّر بهجرةٍ تُراجَع لا
   // بنداءٍ من لوحة، وصندوقُ الأحداث يكتبه مُطلِقُ القاعدة — ومسارُ
