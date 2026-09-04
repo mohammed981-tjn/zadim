@@ -1,7 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk";
-import { Container, Heading, Text, Input, Label, Switch, Button, Table, Textarea } from "@medusajs/ui";
+import { Container, Heading, Text, Input, Label, Switch, Button, Table } from "@medusajs/ui";
 import { useEffect, useState } from "react";
-import { Rtl, adminGet, adminPost, adminPatch, adminDelete, riyals } from "../../../lib/rtl";
+import { Rtl, adminGet, adminPost, adminDelete, riyals } from "../../../lib/rtl";
 
 type Policy = {
   id: string;
