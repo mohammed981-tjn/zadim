@@ -6,6 +6,8 @@ import { MARKETING_MODULE } from "../modules/marketing";
 import type MarketingModuleService from "../modules/marketing/service";
 import { WISHLIST_MODULE } from "../modules/wishlist";
 import type WishlistModuleService from "../modules/wishlist/service";
+import { NOTIFY_MODULE } from "../modules/notify";
+import type NotifyModuleService from "../modules/notify/service";
 
 /**
  * تصريفُ صندوق الأحداث إلى رسائل — **الطرفُ الذي كان ناقصاً**.
@@ -32,10 +34,10 @@ import type WishlistModuleService from "../modules/wishlist/service";
  * واحدة فتموت في منتصفها ولا تُسلّم شيئاً. والمتراكمُ يُصرَّف على
  * دوراتٍ، وكلُّ حدثٍ يُوسَم فور تسليمه فلا يُعاد.
  *
- * ⚠️ **ولا مزوّدَ رسائل حقيقيّ بعد** (ينتظر حساب SMS/بريد): `dispatch`
- * بلا دالّةِ إرسالٍ يُخطّط ويحجز ويترك الحالةَ `queued`. فهذه المهمّةُ
- * اليوم تُفرغ الصندوقَ إلى طابورٍ مقروء، ولا تدّعي إرسالاً لم يقع —
- * ويوم يصل المزوّد يُمرَّر هنا ولا يتغيّر شيءٌ آخر.
+ * ⚠️ **والمزوّدُ يُمرَّر الآن** (بند ٤٣): `modules/notify` يفحص إلغاءَ
+ * الاشتراك ثم يختار مزوّدَ القناة. والمزوّدُ الافتراضيُّ يسجّل ولا
+ * يرسل — **ويقول `queued` لا `sent`**، فلا يُدَّعى إرسالٌ لم يقع.
+ * ويوم يصل مزوّدٌ حقيقيّ يُضاف مجلَّدُه ولا يتغيّر سطرٌ هنا.
  */
 
 /** كم حدثاً في الدورة الواحدة. */
@@ -109,12 +111,15 @@ export default async function dispatchMarketing(container: MedusaContainer) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const orders = container.resolve(ORDERS_MODULE) as OrdersModuleService;
   const marketing = container.resolve(MARKETING_MODULE) as MarketingModuleService;
+  const notify = container.resolve(NOTIFY_MODULE) as NotifyModuleService;
 
   const pending = (await orders.pendingEvents(BATCH)) as any[];
   if (!pending.length) return;
 
   let planned = 0;
   let claimed = 0;
+  let sent = 0;
+  let suppressed = 0;
   let failed = 0;
 
   for (const row of pending) {
@@ -152,9 +157,15 @@ export default async function dispatchMarketing(container: MedusaContainer) {
             : [];
 
       for (const target of targets.length ? targets : [null]) {
-        const out = await marketing.dispatch(due, target);
+        // 🔴 **والمزوّدُ يُمرَّر الآن** — وهو ما كان ناقصاً: `dispatch`
+        // بلا دالّةِ إرسالٍ يُخطّط ويحجز ويترك الحالةَ `queued` أبداً.
+        // ويُمرَّر `deliver` لا مزوّدٌ بعينه: هو من يفحص إلغاءَ
+        // الاشتراك ويختار مزوّدَ القناة.
+        const out = await marketing.dispatch(due, target, (plan) => notify.deliver(plan));
         planned += out.planned;
         claimed += out.claimed;
+        sent += out.sent;
+        suppressed += out.suppressed;
       }
 
       // 🔴 يُوسَم مُسلَّماً **بعد** الحجز لا قبله: حدثٌ يُوسَم ثم يسقط
@@ -171,7 +182,8 @@ export default async function dispatchMarketing(container: MedusaContainer) {
   }
 
   logger.info(
-    `[zadim] تصريفُ التسويق: ${pending.length} حدثاً · ${planned} خطّةً · ${claimed} حجزاً · ${failed} فشلاً.`
+    `[zadim] تصريفُ التسويق: ${pending.length} حدثاً · ${planned} خطّةً · ` +
+      `${claimed} حجزاً · ${sent} مُسلَّمةً · ${suppressed} مُلغاةً · ${failed} فشلاً.`
   );
 }
 

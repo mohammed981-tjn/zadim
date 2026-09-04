@@ -68,13 +68,29 @@ class MarketingModuleService extends MedusaService({
   async dispatch(
     event: DueEvent,
     recipient: { email?: string | null; phone?: string | null; locale?: string } | null,
-    send?: (plan: SendPlan) => Promise<{ ok: boolean; provider?: string; error?: string }>
-  ): Promise<{ planned: number; claimed: number; sent: number }> {
+    /**
+     * 🔴 **يُعيد حالةً لا `ok`** — وهذا تغييرُ عقدٍ مقصود.
+     *
+     * كان `ok:true` يُترجَم إلى `sent`، فأيُّ مزوّدٍ يقول «تلقّيتُ
+     * طلبَك» يُسجَّل «أُرسلت» — ثم يُبنى تقريرٌ يقول إن ٩٩٪ وصلت، ثم
+     * قرارٌ على التقرير. **والمزوّدُ وحدَه يعرف**، فحالتُه تُسجَّل كما
+     * هي (`modules/notify/contract.ts`).
+     */
+    send?: (
+      plan: SendPlan
+    ) => Promise<{
+      status: "sent" | "queued" | "failed";
+      provider?: string;
+      error?: string;
+      suppressed?: boolean;
+    }>
+  ): Promise<{ planned: number; claimed: number; sent: number; suppressed: number }> {
     const templates = (await this.listNotificationTemplates({})) as unknown as TemplateRow[];
     const plans = planSends(event, templates, recipient);
 
     let claimed = 0;
     let sent = 0;
+    let suppressed = 0;
 
     for (const plan of plans) {
       const { fresh, row } = await this.claimSend(plan);
@@ -83,16 +99,24 @@ class MarketingModuleService extends MedusaService({
 
       if (!send) continue;
       const result = await send(plan);
+
+      // ⚠️ **والمُلغي اشتراكَه يُوسَم `suppressed` لا `failed`.**
+      // والفرقُ ليس تجميلياً: `failed` تدخل تقاريرَ الأعطال فتُقرأ
+      // مشكلةً تقنيةً تُطارَد، و`suppressed` قرارُ عميلٍ يُحترم.
+      const status = result.suppressed ? "suppressed" : result.status;
+
       await this.updateNotificationSends({
         id: row.id,
-        status: result.ok ? "sent" : "failed",
+        status,
         provider: result.provider ?? null,
         error: result.error ?? null,
       } as any);
-      if (result.ok) sent++;
+
+      if (status === "sent") sent++;
+      if (status === "suppressed") suppressed++;
     }
 
-    return { planned: plans.length, claimed, sent };
+    return { planned: plans.length, claimed, sent, suppressed };
   }
 
   key(eventId: string, channel: string, recipient: string): string {
