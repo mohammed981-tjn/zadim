@@ -1,0 +1,62 @@
+<!doctype html>
+<!--
+  صفحةُ «لا اتصال» — ملفٌّ ساكنٌ في `public/` بقصد.
+
+  عاملُ الخدمة يعرضها حين تسقط الشبكةُ عن تنقّلٍ، وهي اللحظةُ التي لا
+  يعمل فيها Next ولا خطُّ الويب ولا أيُّ نداءٍ خارجيّ. فكلُّ شيءٍ هنا
+  **داخلَ الملفّ**: لا خطٌّ يُنزَّل، ولا CSS خارجيّ، ولا صورة.
+-->
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f9f8f4">
+<title>لا اتصال — زادم</title>
+<style>
+  :root { color-scheme: light }
+  body {
+    margin: 0; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    background: #f9f8f4; color: #34302a;
+    font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
+    text-align: center; padding: 24px;
+  }
+  main { max-width: 26rem }
+  .mark {
+    width: 72px; height: 72px; margin: 0 auto 24px;
+    border-radius: 16px; background: #2c6547;
+    display: flex; align-items: center; justify-content: center;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 12px; font-weight: 700 }
+  p { margin: 0 0 24px; line-height: 1.9; color: #6b6459 }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: #2c6547; color: #faf8f3;
+    border: 0; border-radius: 10px; padding: 12px 28px;
+  }
+  button:hover { background: #24523a }
+</style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 64 64" width="44" height="44">
+        <path d="M45 24C45 34 41.5 42 35 47.5 29.5 52 23 53.5 16 53.5"
+              fill="none" stroke="#faf8f3" stroke-width="8"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="42" cy="12.5" r="3.8" fill="#faf8f3"/>
+      </svg>
+    </div>
+    <h1>لا يوجد اتصال بالإنترنت</h1>
+    <p>
+      تعذّر الوصول إلى زادم. تحقّق من اتصالك ثم أعد المحاولة —
+      سلّتك محفوظة ولن تضيع.
+    </p>
+    <button onclick="location.reload()">إعادة المحاولة</button>
+  </main>
+  <script>
+    // يعود تلقائياً حين ترجع الشبكة، فلا ينتظر الزائرُ ضغطَ زرّ.
+    addEventListener("online", () => location.reload())
+  </script>
+</body>
+</html>

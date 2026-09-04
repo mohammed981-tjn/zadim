@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { IBM_Plex_Sans_Arabic } from "next/font/google"
 import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
+import { ServiceWorker } from "@/components/service-worker"
 import { dirOf, isLocale, t, type Locale } from "@/lib/i18n"
 
 /**
@@ -51,6 +52,18 @@ export async function generateMetadata({
     alternates: {
       languages: { ar: "/ar", en: "/en" },
     },
+    // ⚠️ أيقونةُ iOS **لا يُولّدها البيانُ**: نظامُ آبل لا يقرأ
+    // `manifest.webmanifest` أصلاً، ويأخذ أيقونةَ الشاشةِ الرئيسية من
+    // هذه الوسمة وحدَها. وبلا سطرها يقتطع iOS **لقطةً من الصفحة**
+    // ويضعها أيقونةً — وهي في متجرٍ لقطةُ رفٍّ لا علامة.
+    icons: {
+      apple: "/icons/apple-touch-icon.png",
+    },
+    appleWebApp: {
+      capable: true,
+      title: t(l, "site.name"),
+      statusBarStyle: "default",
+    },
   }
 }
 
@@ -76,6 +89,7 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={dirOf(locale)} className={`${plexArabic.variable} bg-background`}>
       <body className="font-sans antialiased">
+        <ServiceWorker />
         <div className="flex min-h-dvh flex-col">
           <SiteHeader locale={locale} />
           <main className="flex-1">{children}</main>
