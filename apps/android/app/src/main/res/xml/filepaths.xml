@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ما يجوز لـChrome قراءتُه من مساحةِ التطبيق. ومحصورٌ في مجلَّد التنزيلات
+  الخاصِّ بالتطبيق: أوسعُ منه (`.` أو `files/`) يفتح مساحتَه كلَّها لعمليّةٍ
+  أخرى — وهي هنا Chrome، لكنّ السعةَ تُمنح مرّةً وتُساء بعدها.
+-->
+<paths>
+  <files-path name="downloads" path="downloads/" />
+  <cache-path name="cache_downloads" path="downloads/" />
+</paths>

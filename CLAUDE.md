@@ -88,7 +88,7 @@ export DATABASE_SCHEMA=zadim JWT_SECRET=x COOKIE_SECRET=x
 cd apps/backend && npx medusa exec ./src/scripts/verify-<اسم>.ts
 
 # 🔴 قبل كلّ دفع — إلزاميّ
-bash scripts/preflight.sh            # بناءٌ + أنواعُ الواجهة + الأدلّة
+bash scripts/preflight.sh            # بناءٌ + أنواعُ الواجهة + XML + الأدلّة
 bash scripts/preflight.sh --gates    # ومعها البوّابات كلُّها
 ```
 
@@ -110,3 +110,7 @@ bash scripts/preflight.sh --gates    # ومعها البوّابات كلُّه�
 4. **حسابُ رسائل** — الإشعاراتُ تقف عند `queued`، واستعادةُ كلمة المرور
    معطَّلةٌ بلا مزوّد.
 5. **حسابُ ناقلٍ** للبوليصة والتتبّع.
+6. **مفتاحُ توقيعِ أندرويد** — بُني التطبيقُ (TWA) وبوّابةُ بنائه
+   (2026-09-04)، ولا يُوقَّع ولا يُرفع إلى Play بلا مفتاحٍ يُنشئه المالك
+   ويحفظه. وضياعُه بعد أوّل رفعٍ يعني **تطبيقاً لا يُحدَّث أبداً**.
+   انظر `docs/18-android-app.md`.

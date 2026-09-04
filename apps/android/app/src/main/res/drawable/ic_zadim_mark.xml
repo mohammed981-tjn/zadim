@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- مولَّدٌ من tools/icons — لا يُحرَّر بيدٍ، بل يُعاد توليدُه. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="132dp"
+    android:height="132dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+  <path
+      android:pathData="M47.45,22.30 C47.45,32.96 43.72,41.48 36.80,47.34 C30.93,52.14 24.01,53.74 16.55,53.74"
+      android:strokeColor="#2c6547"
+      android:strokeWidth="8.52"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+  <path
+      android:pathData="M44.25,6.00 a4.05,4.05 0 1,1 -0.01,0 Z"
+      android:fillColor="#2c6547" />
+</vector>

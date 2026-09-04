@@ -19,3 +19,13 @@ coverage/
 apps/backend/.env
 apps/backend/src/modules/access/migrations/.snapshot-*.json
 apps/backend/.medusa/
+
+# ── أندرويد ─────────────────────────────────────────────────────────
+# ومخرجاتُ Gradle وحدَها: `gradle/wrapper/gradle-wrapper.jar` **يُلتزم**
+# بقصد — بلا ملفّ الغلاف يبني كلُّ مُشغّلٍ بنسخةِ Gradle التي صادفها.
+apps/android/build/
+apps/android/app/build/
+apps/android/.gradle/
+apps/android/local.properties
+apps/android/*.keystore
+apps/android/*.jks

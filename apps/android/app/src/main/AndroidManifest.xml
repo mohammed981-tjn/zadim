@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  بيانُ تطبيقِ زادم — نشاطُ إقلاعٍ واحدٍ من `androidbrowserhelper`.
+
+  ── ولماذا لا كودَ جافا في هذا المشروع إطلاقاً ────────────────────
+
+  لأن كلَّ ما يلزم إعلانٌ: أيَّ عنوانٍ نفتح، وبأيّ لون، وأيَّ نطاقٍ
+  ندّعي. والمكتبةُ تملك النشاطَ والخدمةَ والرجوعَ إلى WebView حين لا
+  يكون Chrome حاضراً. وصفٌّ نكتبه هنا صفٌّ نصونه ونحدّثه ونُصلح ثغراتِه —
+  لأجل ما هو مكتوبٌ ومصانٌ في مكتبةِ Google نفسِها.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <!--
+    إذنُ الإشعارات (أندرويد ١٣+). ولا يُطلب عند الفتح: `androidbrowserhelper`
+    يطلبه حين يطلب الموقعُ إذنَ `Notification` — فيرى المستخدمُ السؤالَ
+    مرتبطاً بما فعل، لا نافذةً على وجهه في أوّل ثانية.
+  -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application
+      android:allowBackup="true"
+      android:icon="@mipmap/ic_launcher"
+      android:label="@string/app_name"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:supportsRtl="true"
+      android:theme="@style/Theme.Zadim">
+
+    <meta-data
+        android:name="asset_statements"
+        android:resource="@string/asset_statements" />
+
+    <activity
+        android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+        android:exported="true"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Zadim.Splash">
+
+      <meta-data
+          android:name="android.support.customtabs.trusted.DEFAULT_URL"
+          android:value="@string/launch_url" />
+
+      <!--
+        لونُ الشريطين لونُ خلفيةِ الموقع نفسِه (`themeColor` في
+        `app/[locale]/layout.tsx`). ولونٌ مخالفٌ يرسم خطّاً غريباً فوق
+        الترويسة يكشف أن ما تحته صفحةُ ويب.
+      -->
+      <meta-data
+          android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+          android:resource="@color/backgroundColor" />
+      <meta-data
+          android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+          android:resource="@color/backgroundColor" />
+
+      <!--
+        شاشةُ الإقلاع تسدّ الفجوةَ بين النقر وأوّل رسمةٍ من الموقع.
+        وبدونها يرى المستخدمُ **بياضاً** ثانيةً أو ثانيتين على شبكةٍ
+        بطيئة، فيظنّ التطبيقَ معلَّقاً.
+      -->
+      <meta-data
+          android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
+          android:resource="@drawable/splash" />
+      <meta-data
+          android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
+          android:resource="@color/backgroundColor" />
+      <meta-data
+          android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
+          android:value="${applicationId}.fileprovider" />
+
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+
+      <!--
+        ⚠️ `autoVerify` هو ما يجعل رابطَ `https://<النطاق>/…` يُفتح **في
+        التطبيق** لا في المتصفّح: رسالةُ تأكيدِ طلبٍ يضغطها العميلُ تعيده
+        إلى تطبيقه بحالته. والتحقّقُ يقرأ روابطَ الأصول على النطاق — فإن
+        لم تُنشر، فُتح الرابطُ في المتصفّح بلا أيّ خطأٍ ظاهر.
+      -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" android:host="@string/host" />
+      </intent-filter>
+    </activity>
+
+    <activity
+        android:name="com.google.androidbrowserhelper.trusted.FocusActivity"
+        android:exported="false" />
+
+    <!--
+      الرجوعُ إلى WebView حين لا Chrome ولا متصفّحَ يدعم TWA. وهو نادرٌ
+      لكنّه ليس معدوماً (أجهزةٌ صينيةٌ بلا خدمات Google)، والبديلُ عنه
+      تطبيقٌ **لا يفتح شيئاً** على تلك الأجهزة.
+    -->
+    <activity
+        android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
+        android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|layoutDirection"
+        android:exported="false" />
+
+    <service
+        android:name="com.google.androidbrowserhelper.trusted.DelegationService"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </service>
+
+    <!-- يمرّر ملفّاً يختاره المستخدمُ (صورةَ شكوى مثلاً) إلى Chrome. -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/filepaths" />
+    </provider>
+  </application>
+</manifest>

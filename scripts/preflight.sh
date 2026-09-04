@@ -37,6 +37,9 @@ else
   bad "أنواعُ الواجهة"
 fi
 
+step "صحّةُ XML (أيقوناتٌ وموارِدُ أندرويد)"
+if node scripts/verify-xml.mjs >/dev/null 2>&1; then ok "verify-xml"; else bad "verify-xml — شغّلْ: node scripts/verify-xml.mjs"; fi
+
 step "الأدلّة الستّة"
 if node scripts/verify-guides.mjs >/dev/null 2>&1; then ok "verify-guides"; else bad "verify-guides"; fi
 

@@ -1,0 +1,105 @@
+plugins {
+  id "com.android.application"
+}
+
+def storeHost = providers.gradleProperty("zadim.host").get()
+def appId = providers.gradleProperty("zadim.applicationId").get()
+
+/*
+ * ── التوقيعُ: أسرارٌ من البيئة، وسقوطٌ ناطقٌ عند غيابها ─────────────
+ *
+ * مفتاحُ التوقيع **لا يدخل المستودعَ أبداً**: من ملكه نشر تحديثاً باسم
+ * زادم على كلّ جهازٍ مثبِّت. فيصل من أسرارِ الورشة، ويُفكّ إلى ملفٍّ
+ * مؤقّتٍ في التشغيلة وحدها.
+ *
+ * وغيابُه **لا يُسقط البناء**: نسخةُ `assembleRelease` بلا توقيعٍ مفيدةٌ
+ * للتجريب على جهازٍ عبر `adb install` — لكنّها لا تُرفع إلى Play.
+ * والمخرَجُ يقول أيَّهما هو، فلا يُرفع غيرُ الموقَّع ظنّاً.
+ */
+def keystorePath = System.getenv("ZADIM_KEYSTORE_FILE")
+def hasKeystore = keystorePath != null && !keystorePath.isEmpty() && file(keystorePath).exists()
+
+android {
+  namespace "co.zadim.store"
+  compileSdk 36
+
+  defaultConfig {
+    applicationId appId
+    minSdk 21
+    targetSdk 36
+    versionCode(providers.gradleProperty("zadim.versionCode").map { it as int }.getOrElse(1))
+    versionName providers.gradleProperty("zadim.versionName").getOrElse("1.0.0")
+
+    // ── ما يقرؤه البيانُ في `AndroidManifest.xml` ──────────────────
+    // مصدرُ الحقيقة الواحدُ للنطاق: يُكتب هنا مرّةً ويُقرأ في البيان
+    // وفي بيانِ الأصول — فلا يُنسى أحدُهما عند تغييره.
+    resValue "string", "app_name", "زادم"
+    resValue "string", "launch_url", "https://${storeHost}/ar"
+    resValue "string", "host", storeHost
+
+    /*
+     * ⚠️ **بيانُ الأصول: الطرفُ الذي يقع على التطبيق.**
+     *
+     * التحقّقُ طرفان: هذا يقول «أنا أدّعي هذا الموقع»، وملفُّ
+     * `/.well-known/assetlinks.json` على الموقع يقول «وأنا أُقرّ بهذه
+     * الحزمة». وطرفٌ بلا طرفٍ لا يُخفي شريطَ العنوان.
+     */
+    resValue "string", "asset_statements",
+        "[{ \\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], " +
+        "\\\"target\\\": {\\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://${storeHost}\\\"}}]"
+  }
+
+  if (hasKeystore) {
+    signingConfigs {
+      release {
+        storeFile file(keystorePath)
+        storePassword System.getenv("ZADIM_KEYSTORE_PASSWORD")
+        keyAlias System.getenv("ZADIM_KEY_ALIAS")
+        keyPassword System.getenv("ZADIM_KEY_PASSWORD")
+      }
+    }
+  }
+
+  buildTypes {
+    release {
+      if (hasKeystore) {
+        signingConfig signingConfigs.release
+      }
+      /*
+       * ⚠️ **لا تصغيرَ ولا تشويه.**
+       *
+       * التطبيقُ لا يحمل منطقاً: نشاطٌ واحدٌ من مكتبةٍ يفتح عنواناً.
+       * فـR8 لا يجد ما يحذفه، ويجد ما يكسره — أصنافُ
+       * `androidbrowserhelper` تُنادى بالانعكاس من خدمة Chrome،
+       * وتشويهُ اسمِها يقطع الوصلَ بلا خطأٍ في البناء.
+       */
+      minifyEnabled false
+      shrinkResources false
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  // ولا تُبنى نسخةُ التشخيص في البوّابة — لكنّها تبقى ممكنةً محلياً.
+  buildFeatures {
+    buildConfig false
+  }
+}
+
+dependencies {
+  /*
+   * ── لماذا `androidbrowserhelper` ولا سطرَ WebView واحد ────────────
+   *
+   * الفرقُ ليس أسلوباً: **متجرُ Play يرفض غلافَ WebView** صراحةً
+   * (سياسة «الحدّ الأدنى من الوظائف»)، ويقبل TWA لأنه محرّكُ Chrome
+   * نفسُه — بمخزنِ كلماتِ سرّه وحمايتِه ومحدِّثِه الشهريّ.
+   *
+   * وعملياً: WebView يفقد جلسةَ الدخول عند كلّ تحديثِ نظام، ولا يملك
+   * `Web Push`، وأداؤه على `Web Payments` أدنى. وTWA لا يفقد شيئاً —
+   * فهو نفسُ المتصفّح بلا شريطِ عنوان.
+   */
+  implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+}

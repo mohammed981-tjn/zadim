@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  الأيقونةُ المتكيّفة (أندرويد ٨+): المُشغّلُ يقتطعها بالشكل الذي تختاره
+  الشركةُ المصنّعة — دائرةً أو مربّعاً أو زهرة. فتُعطى طبقتين ويُترك له
+  القصّ، بدل صورةٍ واحدةٍ يقصّها فيأكل الحرف.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@color/brandGreen" />
+  <foreground android:drawable="@drawable/ic_launcher_foreground" />
+  <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

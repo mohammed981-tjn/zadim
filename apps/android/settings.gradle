@@ -1,0 +1,25 @@
+/*
+ * ── لماذا مشروعُ Gradle مستقلٌّ داخل مستودعٍ عقدته Node ──────────────
+ *
+ * أندرويد لا يُبنى إلا بـ Gradle، وGradle لا يُدمج في مساحةِ عمل npm.
+ * فيبقى `apps/android` جزيرةً: لا يشترك في `package.json` ولا يعرفه
+ * `preflight.sh`، ويُبنى ببوّابته وحدَه (`.github/workflows/android.yml`).
+ */
+pluginManagement {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
+}
+
+dependencyResolutionManagement {
+  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+  repositories {
+    google()
+    mavenCentral()
+  }
+}
+
+rootProject.name = "zadim"
+include ":app"

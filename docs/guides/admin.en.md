@@ -1,7 +1,9 @@
 # Zadim store manager's guide
 
-> Last updated: 2026-09-04 — four new screens (invoicing · cash-on-
-> delivery · stock adjustments · coupon policies).
+> Last updated: 2026-09-04 — nine new screens (invoicing · cash-on-
+> delivery · stock adjustments · coupon policies · suppliers and
+> purchase orders · alert thresholds · the stock ledger · warehouse
+> profiles).
 > It describes the panel **as it is today**, and anything that has no
 > screen yet is listed plainly in its own table.
 
@@ -26,13 +28,17 @@ and conclude the system is broken.
 | Cash-on-delivery policy · refusals | ✅ `/app/zadim/cod-policy` |
 | Stock adjustments (request/approve/apply) | ✅ `/app/zadim/adjustments` |
 | Coupon policies (per-customer limit · discount cap) | ✅ `/app/zadim/coupon-policies` |
+| Suppliers | ✅ `/app/zadim/suppliers` |
+| Purchase orders (create/place/receive) | ✅ `/app/zadim/purchase-orders` |
+| Low-stock alert thresholds and current breaches | ✅ `/app/zadim/alert-rules` |
+| The stock movement ledger (read-only) | ✅ `/app/zadim/movements` |
+| Warehouse profiles (which location ships) | ✅ `/app/zadim/warehouse-profiles` |
 | Products · prices · stock · orders · customers | ✅ Medusa's own screens |
 | Home page sections (blocks) | ⚙️ API only |
 | **English translation of content** | ⚙️ API only |
 | Return policy · inspection records | ⚙️ API only |
 | Marketing: segments and templates | ⚙️ API only |
 | Roles and permissions · audit log | ⚙️ API only |
-| Warehouse profiles · alert rules | ⚙️ API only |
 | Search synonyms · SEO and redirects | ⚙️ API only |
 
 ⚙️ = ask a developer to run it, or wait for its screen. The capability
@@ -73,6 +79,79 @@ directly. Edit the stocked figure and available follows.
 **And no more is ever sold than exists, however much demand collides.**
 Tested with a hundred simultaneous orders against a stock of ten:
 exactly ten succeeded.
+
+---
+
+## Suppliers — `/app/zadim/suppliers`
+
+Who you buy from. Each supplier's id is copied from this screen to
+create a purchase order against them.
+
+- **The normalized name is guarded by a unique index** — a supplier
+  with a duplicate name (even with a small spelling difference) is
+  rejected instead of creating a second record that purchases later
+  get split across.
+- A suspended supplier stays visible in the list (their past orders
+  still need an owner), but you can't order from them again.
+
+---
+
+## Purchase orders — `/app/zadim/purchase-orders`
+
+Three steps, **by three different sets of eyes**: whoever creates the
+order isn't necessarily who sends it to the supplier, and neither is
+necessarily who receives the goods — permissions enforce this split on
+their own.
+
+1. **Create** as a "draft": a supplier, a receiving location, and lines
+   (a variant, quantity, and unit cost). The variant id is copied from
+   its product screen in Medusa.
+2. **Send to supplier** — freezes the lines: quantities and the agreed
+   price no longer change after this.
+3. **Receive** — from the order's detail view, line by line. **Only
+   here does stock actually increase**, and the real cost is recorded
+   for the margin calculation later.
+
+🔴 **You cannot receive more than what was ordered** — the screen
+shows "remaining" for each line, and the server rejects any excess. To
+fix an accidental over-receipt, enter a **negative quantity** — it
+writes a matching negative receipt, so the mistake stays in the ledger.
+
+---
+
+## Alert thresholds — `/app/zadim/alert-rules`
+
+When you get warned that an item is about to run out.
+
+- **With no general rule, there is no alert at all** — on purpose: an
+  alert with a number nobody chose gets ignored within a week, then
+  ignored the day it's actually true.
+- A rule can be narrowed to a specific item, a location, or both — the
+  more specific rule wins over the general one.
+- At the bottom of the screen: **what has actually hit the threshold
+  right now**, computed the moment the page opens, not from a saved
+  table that might be stale.
+
+---
+
+## The stock movement ledger — `/app/zadim/movements`
+
+**Read-only.** Every change to an item's balance — a sale, a receipt, an
+adjustment, damage, a return — is written here automatically with its
+reason and reference, and there is no way to write a row into it by
+hand, ever.
+
+Use it to answer "where did this balance go?" — filter by item or
+location id to trace its history.
+
+---
+
+## Warehouse profiles — `/app/zadim/warehouse-profiles`
+
+Decide **which location an order ships from** when stock is available
+in more than one warehouse. The lower priority number is suggested
+first, and turning off "ships from here" excludes a location from the
+suggestion without deleting its profile.
 
 ---
 

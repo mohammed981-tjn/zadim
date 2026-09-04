@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    السمةُ الأساس: `NoActionBar` لأن الترويسةَ ترسمها الصفحةُ نفسُها،
+    وشريطُ نظامٍ فوقها ترويسةٌ ثانيةٌ فارغة.
+  -->
+  <style name="Theme.Zadim" parent="android:Theme.DeviceDefault.Light.NoActionBar" />
+
+  <!--
+    سمةُ الإقلاع: خلفيّتُها هي شاشةُ الإقلاع، فتُرسم **قبل** أن يُنشأ أيُّ
+    شيء. ولو وُضعت الشاشةُ في `onCreate` لظهر البياضُ قبلها.
+  -->
+  <style name="Theme.Zadim.Splash" parent="Theme.Zadim">
+    <item name="android:windowBackground">@drawable/splash</item>
+  </style>
+</resources>
