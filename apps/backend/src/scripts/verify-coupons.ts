@@ -1,6 +1,7 @@
 import { ExecArgs } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import { COUPON_POLICY_MODULE } from "../modules/promotions";
+import { validate, capWarning } from "../api/admin/coupons/policies/route";
 import type PromotionsPolicyService from "../modules/promotions/service";
 import { checkCoupon, orderByPriority, DEFAULT_PRIORITY } from "../modules/promotions/eligibility";
 
@@ -183,6 +184,75 @@ export default async function verifyCoupons({ container }: ExecArgs) {
   other
     ? pass("وعميلٌ آخرُ يستعمله — فالحدُّ لكل عميلٍ لا كلّيّ")
     : fail("عميلٌ آخرُ مُنع — الحدُّ صار كلّياً");
+
+  // ── 🔴 والسياسةُ صار يضبطها مسارٌ إداريّ ────────────────────
+  //
+  // وهذا كان الثقبَ: الجدولُ مبنيٌّ ومحروسٌ ومُختبَرٌ **ولا يكتبه أحد**
+  // إلا `psql`. وهو نفسُ الصنف الذي بُني هذا التدقيقُ لكشفه — قدرةٌ
+  // مكتملةٌ لا يناديها مسارُ إنتاجٍ واحد.
+  logger.info("== وسياسةُ الكوبون صار يضبطها مسارٌ إداريّ ==");
+
+  const { readFileSync, existsSync } = await import("fs");
+  const routeFile = "src/api/admin/coupons/policies/route.ts";
+  existsSync(routeFile) && /createCouponPolicies\(/.test(readFileSync(routeFile, "utf8"))
+    ? pass("المسارُ الإداريُّ موجودٌ ويكتب السياسة — لا `psql` وحدَه")
+    : fail("لا مسارَ إداريَّ يكتب `zadim_coupon_policy` — السياسةُ حبرٌ");
+
+  // وخريطةُ الصلاحيات تعرفه: مسارٌ بلا قاعدةٍ يُرفض افتراضاً، فيبدو
+  // «معطوباً» بينما هو **غيرُ مسجَّل**.
+  const map = readFileSync("src/modules/access/permission-map.ts", "utf8");
+  /coupons\\\/policies/.test(map)
+    ? pass("وخريطةُ الصلاحيات تحرسه — لا يسقط في الرفض الافتراضيّ صامتاً")
+    : fail("المسارُ ليس في `permission-map.ts` — سيُرفض بلا سببٍ مفهوم");
+
+  // ── والتحقّقُ يردّ برسالةٍ ولا يقصّ بصمت ────────────────────
+  //
+  // ⚠️ ومديرٌ كتب صفراً يقصد «ممنوعٌ على الجميع»، وقصُّه إلى واحدٍ
+  // يعطيه سلوكاً لم يطلبه ولا يعرف أنه وقع.
+  const cases: Array<[string, any, boolean]> = [
+    ["حدٌّ صفرٌ يُرفض (إطفاءٌ يُقال بالحالة لا برقمٍ يبدو حدّاً)", { per_customer_limit: 0 }, false],
+    ["وحدٌّ سالبٌ يُرفض", { per_customer_limit: -1 }, false],
+    ["وسقفٌ صفرٌ يُرفض", { max_discount: 0 }, false],
+    ["وسقفٌ كسريٌّ يُرفض (الهللاتُ صحيحةٌ — ADR-008)", { max_discount: 19.99 }, false],
+    ["وترتيبٌ خارجَ المدى يُرفض", { priority: 99999 }, false],
+    ["و`null` تعني «بلا قيد» فتُقبل", { per_customer_limit: null, max_discount: null }, true],
+    ["وقيمٌ سليمةٌ تُقبل", { per_customer_limit: 2, max_discount: 5000, priority: 10 }, true],
+  ];
+  let validOk = true;
+  for (const [why, body, shouldPass] of cases) {
+    const got = validate(body) === null;
+    if (got !== shouldPass) {
+      fail(`التحقّق: ${why} — النتيجة ${got} والمتوقَّع ${shouldPass}`);
+      validOk = false;
+    }
+  }
+  if (validOk) pass(`والتحقّقُ يطابق جدولَ الحقيقة (${cases.length} حالات)`);
+
+  // ── 🔴 والسقفُ يقول ما يفعله — لا ما نتمنّاه ────────────────
+  //
+  // وهذا قِيس ولم يُظنّ: `updateCartPromotionsWorkflow` يحذف التسويّاتِ
+  // ثمّ يُعيد بناءها من `computeActions`، فأيُّ قصٍّ بأيدينا يُمحى مع
+  // أوّل تغيّرٍ في السلّة. فالسقفُ يعمل **بالرفض**، والمديرُ يُخبَر
+  // بذلك **لحظةَ ضبطه** لا بعد شكوى عميل.
+  const pct = { application_method: { type: "percentage" } };
+  const fixed = { application_method: { type: "fixed" } };
+
+  const warnCases: Array<[string, any, any, boolean]> = [
+    ["سقفٌ على نسبةٍ ⇒ يُنبَّه أنه يرفض ولا يقصّ", { max_discount: 5000 }, pct, true],
+    ["وسقفٌ على مبلغٍ ثابتٍ ⇒ لا تنبيه (السقفُ هو المبلغُ نفسُه)", { max_discount: 5000 }, fixed, false],
+    ["ولا سقفَ ⇒ لا تنبيه", {}, pct, false],
+    ["و`null` صريحةٌ ⇒ لا تنبيه", { max_discount: null }, pct, false],
+  ];
+  let warnOk = true;
+  for (const [why, body, promo2, shouldWarn] of warnCases) {
+    if ((capWarning(body, promo2) !== null) !== shouldWarn) {
+      fail(`تنبيهُ السقف: ${why}`);
+      warnOk = false;
+    }
+  }
+  if (warnOk) {
+    pass("وتنبيهُ السقف يُقال للنسبة وحدَها — والمبلغُ الثابتُ سقفُه هو مبلغُه");
+  }
 
   if (failures) {
     throw new Error(`[zadim] سقط ${failures} فحصاً من فحوص الكوبونات.`);
