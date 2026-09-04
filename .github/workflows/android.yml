@@ -229,8 +229,12 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: apps/android
+          # ⚠️ السكربتُ يعمل بـ`sh` (dash) لا bash — والأداةُ لا تقول ذلك.
+          # فلا `pipefail` ولا `[[ ]]`: أوّلُ سطرٍ فيه bash-ism يُسقط
+          # الخطوةَ **قبل أن يُثبَّت التطبيق**، فتبدو حمرةً في مكانٍ
+          # وسببُها في آخر. (قيس: «Illegal option -o pipefail».)
           script: |
-            set -uo pipefail
+            set -u
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
             adb shell am start -n co.zadim.store/com.google.androidbrowserhelper.trusted.LauncherActivity
