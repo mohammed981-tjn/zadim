@@ -1,10 +1,12 @@
 {
   "apps/backend": {
     "high": 69,
-    "moderate": 10
+    "moderate": 10,
+    "lockfile": "54e0728482dd05a5"
   },
   "apps/storefront": {
     "high": 0,
-    "moderate": 0
+    "moderate": 0,
+    "lockfile": "e69f217e2704f1b5"
   }
 }
