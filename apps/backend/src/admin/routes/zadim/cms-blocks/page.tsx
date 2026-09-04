@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk";
-import { Container, Heading, Text, Table, Badge, Button, Input, Label, Select, Switch, Textarea } from "@medusajs/ui";
+import { Container, Heading, Text, Table, Badge, Button, Input, Label, Switch, Textarea } from "@medusajs/ui";
 import { useEffect, useState } from "react";
 import { Rtl, adminGet, adminPost } from "../../../lib/rtl";
 
