@@ -208,6 +208,45 @@ jobs:
           done
           exit "$fail"
 
+      # 🔴 **الفحصُ الوحيدُ الذي كان ينقص: هل يفتح أصلاً؟**
+      #
+      # ثلاثةُ فحوصٍ قبله تسأل عن الحزمة — نطاقُها وتوقيعُها وسمتُها —
+      # **ولا واحدَ منها يشغّلها**. فخرجت حزمةٌ تُثبَّت ثمّ تنهار عند
+      # الفتح، وكلُّ الفحوصِ خضراء.
+      #
+      # وأسوأُ من ذلك: شخّصتُ السببَ بالسمة، **فنقضني الحارسُ نفسُه**
+      # (`LauncherActivity` تنحدر من `android.app.Activity` لا من
+      # `AppCompatActivity`). فالتخمينُ عن بُعدٍ لا يُغني عن التشغيل.
+      #
+      # فيُقلَع محاكٍ، ويُثبَّت التطبيقُ، **ويُفتح**، ويُسأل النظامُ:
+      # أما زالت عمليّتُه حيّةً بعد ثوانٍ؟ وإن ماتت طُبع سببُ الانهيار
+      # من `logcat` كاملاً — لا «فشل» مجرَّدة.
+      - name: تشغيلٌ حقيقيٌّ على محاكٍ
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: apps/android
+          script: |
+            set -uo pipefail
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am start -n co.zadim.store/com.google.androidbrowserhelper.trusted.LauncherActivity
+            sleep 10
+            adb logcat -d > "$RUNNER_TEMP/logcat.txt"
+            if adb shell pidof co.zadim.store > /dev/null 2>&1; then
+              echo "✅ التطبيقُ فُتح وما زال حيّاً بعد عشرِ ثوانٍ."
+            else
+              echo "⛔ التطبيقُ انهار عند الفتح — وهذا سببُه:"
+              echo "────────────────────────────────────────────"
+              grep -B2 -A40 -E "FATAL EXCEPTION|AndroidRuntime.*E |Process.*co\.zadim\.store.*died" \
+                "$RUNNER_TEMP/logcat.txt" | head -80
+              echo "────────────────────────────────────────────"
+              exit 1
+            fi
+
       - name: رفعُ المخرجات
         uses: actions/upload-artifact@v4
         with:
