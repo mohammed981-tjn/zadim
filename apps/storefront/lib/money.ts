@@ -56,7 +56,11 @@ export function digits(locale: MoneyLocale, input: string | number): string {
  * formatHalalas(32545, "en") -> "325.45"
  */
 export function formatHalalas(halalas: number, locale: MoneyLocale): string {
-  const value = Math.trunc(halalas)
+  // 🔴 `round` لا `trunc` (ADR-034): مجاميعُ Medusa كسريّةُ الهللة حين
+  // لا تُنتج ضريبةُ ١٥٪ عدداً صحيحاً، والخلفيّةُ **تقرّب** — فهي ما
+  // تُحصّل وتُفوتر. والبترُ هنا كان يعرض رقماً ثالثاً لا يطابق أحدَهما:
+  // 14373.85 ⇒ يُعرض ١٤٣٫٧٣ ويُحصَّل ١٤٣٫٧٤.
+  const value = Math.round(halalas)
   const negative = value < 0
   const abs = Math.abs(value)
 

@@ -5,6 +5,7 @@ import {
   priceDrift,
   totalsBalance,
   totalsOf,
+  rawTotalsOf,
   type CartLine,
   type PriceDrift,
   type Totals,
@@ -67,6 +68,11 @@ class CheckoutModuleService extends MedusaService({ CartQuote, CheckoutAttempt }
 
   totalsOf(cart: any): Totals {
     return totalsOf(cart);
+  }
+
+  /** الخامُ بلا تقريب — للتوازن وحدَه (انظر `rawTotalsOf`). */
+  rawTotalsOf(cart: any): Totals {
+    return rawTotalsOf(cart);
   }
 
   balance(t: Totals) {

@@ -280,7 +280,10 @@ export async function runCheckout(
   // ── ٣) توازنُ المجاميع — حارسٌ على أنفسنا ─────────────────────
   // Medusa لا يخزّن المجاميع فلا `CHECK` يحرسها. ومجموعٌ لا يوازن
   // بنودَه يعني أن العميلَ سيُحصَّل رقماً لا يشرحه شيء.
-  const balance = checkout.balance(totals);
+  // 🔴 **على الخام لا على المقرَّب** (ADR-034): المعادلةُ ثابتٌ حسابيٌّ
+  // عن أرقام Medusa نفسِها، وفحصُها على أرقامٍ قُرِّب كلٌّ منها على حدة
+  // يقيس ضجيجَ التقريب فيمنع بيعاً مشروعاً بهللة.
+  const balance = checkout.balance(checkout.rawTotalsOf(cart));
   if (!balance.ok) {
     return finish(
       err(409, "TOTALS_MISMATCH", "تعذّر تأكيدُ مجموع الطلب. لم يُخصم شيء — حاول بعد قليل.", {

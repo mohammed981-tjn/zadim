@@ -117,8 +117,12 @@ export default async function verifyDashboard({ container }: ExecArgs) {
 
     // الإيرادُ: مجموعُ مجاميع الطلبات غيرِ الملغاة، من `order_summary`
     // — طريقٌ مختلفٌ تماماً عمّا تحسبه اللوحة (بنودٌ وتسويّاتٌ وضريبة).
+    //
+    // و`round` **داخل** الجمع لا خارجه (ADR-034): وحدةُ التقريب الطلبُ
+    // لأنه ما يُحصَّل ويُفوتَر. وتقريبُ المجموع وحدَه يُعطي رقماً لا
+    // يطابق مجموعَ الفواتير، ثم تُطارَد الهللاتُ في تسوية آخر الشهر.
     const revenueSql = await one(
-      `select coalesce(sum((os."totals"->>'current_order_total')::numeric),0)::bigint
+      `select coalesce(sum(round((os."totals"->>'current_order_total')::numeric)),0)::bigint
          from "zadim"."order_summary" os
          join "zadim"."order" o on o."id" = os."order_id"
         where o."status" <> 'canceled' and o."deleted_at" is null and os."deleted_at" is null`
