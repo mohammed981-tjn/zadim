@@ -44,10 +44,22 @@ if [ "${1:-}" = "--gates" ]; then
   step "البوّابات (تحتاج Postgres مُقلَعةً ومبذورة)"
   for f in apps/backend/src/scripts/verify-*.ts; do
     n=$(basename "$f" .ts)
-    if (cd apps/backend && npx medusa exec "./src/scripts/$n.ts" 2>&1 | grep -qE "✅ (كلُّ|بوّابة|فحوصُ)"); then
+    # 🔴 يُجمَع الخرجُ **ثمّ** يُفحص — ولا يُمرَّر إلى `grep -q`.
+    #
+    # وهذا عطبٌ قِيس لا احتياط: `grep -q` يخرج عند أوّل مطابقة فيُغلق
+    # الأنبوب، وسطرُ النجاح ليس آخرَ ما تطبعه البوّابة. فما تطبعه بعده
+    # يصطدم بأنبوبٍ مغلق، ويعلّق `medusa exec` إلى الأبد — عُلّقت
+    # `verify-catalog` عشرَ دقائقَ وهي تنتهي في دقيقتين وحدَها.
+    #
+    # ⚠️ **وأثرُه أخطرُ من بطء**: القاعدةُ في CLAUDE.md أن يُشغَّل هذا
+    # قبل كلّ دفع. وحارسٌ يعلّق حارسٌ يُتخطّى — فيصير الدفعُ بلا فحص.
+    out=$(cd apps/backend && npx medusa exec "./src/scripts/$n.ts" 2>&1)
+    if printf '%s' "$out" | grep -qE "✅ (كلُّ|بوّابة|فحوصُ)"; then
       ok "$n"
     else
       bad "$n"
+      # ولا يُبتلع السبب: بوّابةٌ تسقط بلا سطرٍ يقول لماذا تُعاد بيدٍ.
+      printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
     fi
   done
 fi
