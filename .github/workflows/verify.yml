@@ -347,9 +347,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 🔴 **وتخبئةُ npm هنا أيضاً — وغيابُها كان سببَ التعليق.**
+      #
+      # قِيس (2026-09-04) أن هذه الوظيفة تنادي `npm ci` **ثلاث مرّات**
+      # (خلفيّة · واجهة · أدوات القياس) وكانت **بلا تخبئةٍ إطلاقاً**،
+      # بخلاف وظيفة `verify` التي تخبّئ. فكلُّ نداءٍ يذهب إلى سجلّ npm
+      # من الصفر — وثالثُها هو الذي علق حتى أسقطته المهلة
+      # (`Terminate orphan process: (npm ci)`).
+      #
+      # والتخبئةُ على المفاتيح الثلاثة: تغيّرُ أيِّ قفلٍ يُبطلها وحدَه.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/backend/package-lock.json
+            apps/storefront/package-lock.json
+
+      # ⏱️ وإعداداتُ إعادة المحاولة على مستوى npm نفسِه: بلا هذه يبقى
+      # الجلبُ المتعثّرُ **معلَّقاً** حتى تقتله مهلةُ الخطوة — والمهلةُ
+      # تُنهي الوظيفةَ ولا تُنقذها. وبها يُعيد npm المحاولةَ ثم يفشل
+      # صريحاً، فتبقى فرصةٌ للنجاح في نفس التشغيلة.
+      - name: تحصينُ شبكةِ npm
+        run: |
+          npm config set fetch-retries 5
+          npm config set fetch-retry-mintimeout 20000
+          npm config set fetch-retry-maxtimeout 120000
+          npm config set fetch-timeout 300000
 
       # ── الخلفيّة: تُبنى وتُقلع، وبذورُها هي بذورُ البوّابات ──────────
       - name: حزمُ الخلفيّة
@@ -458,7 +483,7 @@ jobs:
       - name: أدواتُ القياس
         timeout-minutes: 8
         run: |
-          npm ci
+          npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
 
       # 🔴 البوّابة: الاتجاهُ والسرعةُ ومطابقةُ ترتيب الكتل.
