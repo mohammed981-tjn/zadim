@@ -61,6 +61,12 @@ export const ar: Record<string, string> = {
   "totals.vatNote": "الأسعار شاملة ضريبة القيمة المضافة ١٥٪ — منها",
   "totals.stale": "لم يعد هذا الملخّص سارياً. أعِد التسعير للاطلاع على الإجمالي الجديد قبل التأكيد.",
 
+  "coupon.label": "رمز الخصم",
+  "coupon.placeholder": "لديك رمز خصم؟",
+  "coupon.apply": "تطبيق",
+  "coupon.applying": "جارٍ…",
+  "coupon.applied": "طُبِّق الرمز",
+  "coupon.remove": "إزالة",
   "checkout.title": "إتمام الطلب",
   "checkout.stepAddress": "العنوان",
   "checkout.stepShipping": "الشحن",

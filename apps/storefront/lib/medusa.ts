@@ -75,6 +75,18 @@ export interface Cart {
   tax_total: number
   discount_total: number
   total: number
+  /**
+   * رمزُ الكوبون المطبَّق — **مشتقٌّ من تسويّات السلّة لا محفوظٌ عندنا**.
+   *
+   * فالمصدرُ الوحيد هو ما حسبه المحرّك: رمزٌ نحفظه في الواجهة قد يبقى
+   * معروضاً بعد أن يُلغيه الخادمُ لتغيّرِ السلّة، فيرى العميلُ خصماً
+   * مطبَّقاً وليس في مجموعه.
+   *
+   * ⚠️ والعروضُ التلقائيةُ تُنتج تسويّاتٍ برموزٍ أيضاً — ولا تُعرض
+   * هنا: العميلُ لم يكتبها فلا ينزعها. ويميّزها المسارُ بأن الرمزَ
+   * المطبَّق يُعاد من `POST /coupon` وحدَه.
+   */
+  applied_coupon?: string | null
 }
 
 export interface Quote {
@@ -531,7 +543,18 @@ function toCart(raw: any): Cart {
       ...it,
       total: typeof it.total === "number" ? it.total : (it.unit_price ?? 0) * (it.quantity ?? 0),
     })),
+    applied_coupon: couponCodeOf(raw),
   }
+}
+
+/** أوّلُ رمزِ تسويةٍ على السلّة — و«لا يجتمع كوبونان» يجعله الوحيد. */
+function couponCodeOf(raw: any): string | null {
+  for (const it of (raw?.items ?? []) as any[]) {
+    for (const a of (it?.adjustments ?? []) as any[]) {
+      if (a?.code) return String(a.code)
+    }
+  }
+  return null
 }
 
 export async function createCart(): Promise<Cart> {
@@ -1044,4 +1067,46 @@ export async function checkoutCart(cartId: string, idempotencyKey: string): Prom
       message: err instanceof MedusaError ? err.message : "تعذّر إتمام الطلب. حاول مرة أخرى.",
     }
   }
+}
+
+export type CouponResult =
+  | { ok: true; code: string; discount_total: number }
+  | { ok: false; code: string; message: string }
+
+/**
+ * يضع رمزَ خصمٍ على السلّة.
+ *
+ * 🔴 **ولا يُرسَل معرّفُ عميل**: الخادمُ يشتقّ الهويّةَ من الرمز بنفسه.
+ * ومعرّفٌ في الجسم يجعل من يعرف معرّفَ غيره يستهلك كوبوناً باسمه، أو
+ * يتجاوز حدَّه بانتحال هويّةٍ لم تستعمله.
+ */
+export async function applyCartCoupon(
+  cartId: string,
+  code: string,
+  token: string | null,
+): Promise<CouponResult> {
+  try {
+    const data = await medusaFetch<{ code: string; discount_total: number }>(
+      `/store/carts/${encodeURIComponent(cartId)}/coupon`,
+      {
+        method: "POST",
+        body: JSON.stringify({ code }),
+        cache: "no-store",
+        headers: token ? { authorization: `Bearer ${token}` } : undefined,
+      },
+    )
+    return { ok: true, code: data.code, discount_total: data.discount_total }
+  } catch (err) {
+    if (err instanceof MedusaError) {
+      return { ok: false, code: err.code ?? "UNKNOWN", message: err.message }
+    }
+    return { ok: false, code: "UNKNOWN", message: "تعذّر تطبيق الرمز." }
+  }
+}
+
+export async function removeCartCoupon(cartId: string): Promise<void> {
+  await medusaFetch(`/store/carts/${encodeURIComponent(cartId)}/coupon`, {
+    method: "DELETE",
+    cache: "no-store",
+  })
 }

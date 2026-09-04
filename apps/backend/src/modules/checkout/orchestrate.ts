@@ -12,6 +12,7 @@ import type WarehouseModuleService from "../warehouse/service";
 import { PAYMENTS_MODULE } from "../payments";
 import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
+import { recordRedemptions } from "../promotions/apply";
 import { cartLines, currentPrices, readCart } from "./cart-reader";
 import { readNationalAddress } from "./national-address";
 
@@ -357,6 +358,16 @@ export async function runCheckout(
     const order = orders[0] as any;
 
     if (quote) await checkout.consumeQuote(quote.id);
+
+    // 🔴 استهلاكُ الكوبون يُقيَّد **هنا** لا عند وضعه على السلّة: سلّةٌ
+    // فيها كوبونٌ قد تُهجر، ولو عُدّ عند الوضع لأحرق عميلٌ حدَّه بفتح
+    // سلّةٍ وتركها. ولا يُسقط الطلبَ إن تعذّر — الطلبُ وقع والمالُ
+    // التُزم به.
+    await recordRedemptions(scope, {
+      cart_id: cartId,
+      order_id: orderId,
+      customer_id: (cart as any)?.customer_id ?? null,
+    });
 
     return finish(
       {

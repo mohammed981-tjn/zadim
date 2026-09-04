@@ -4,10 +4,13 @@ import { cookies } from "next/headers"
 import { readSession } from "@/lib/auth-actions"
 import {
   addShippingMethod,
+  applyCartCoupon,
+  removeCartCoupon,
   checkoutCart,
   quoteCart,
   setCartAddress,
   type CheckoutResult,
+  type CouponResult,
   type NationalAddressForm,
   type Quote,
   type SaveAddressResult,
@@ -61,4 +64,23 @@ export async function confirmCheckout(idempotencyKey: string): Promise<CheckoutR
     store.delete(COOKIE)
   }
   return result
+}
+
+/**
+ * رمزُ الخصم — فعلٌ خادميّ.
+ *
+ * ورسالةُ الرفض **تُعاد كما كتبها الخادم**: هو الذي يعرف السببَ
+ * (منتهٍ · لا ينطبق · استُعمل من قبل · فوق السقف)، وصياغةٌ عامّةٌ هنا
+ * تُخفي الفرقَ بين «رمزٌ خاطئ» و«رمزٌ صحيحٌ لا ينطبق على سلّتك» —
+ * والثاني يُصلحه العميلُ بنفسه والأوّلُ لا.
+ */
+export async function applyCoupon(code: string): Promise<CouponResult> {
+  const id = await requireCartId()
+  const token = await readSession()
+  return applyCartCoupon(id, code, token)
+}
+
+export async function dropCoupon(): Promise<void> {
+  const id = await requireCartId()
+  await removeCartCoupon(id)
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Truck, MapPin, CreditCard, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Totals } from "@/components/totals"
+import { CouponBox } from "@/components/checkout/coupon-box"
 import { Price } from "@/components/price"
 import { PriceChangedPanel } from "@/components/checkout/price-changed-panel"
 import { OutOfStockPanel } from "@/components/checkout/out-of-stock-panel"
@@ -496,6 +497,15 @@ export function CheckoutFlow({
       <aside className="lg:sticky lg:top-24 lg:self-start">
         <div className="rounded-2xl border border-border bg-card p-5">
           <h2 className="mb-4 text-base font-semibold">{t(locale, "totals.title")}</h2>
+
+          {/* رمزُ الخصم — **قبل الملخّص لا بعده**: العميلُ يكتبه ثم
+              يقرأ أثرَه في نفس النظرة. وخانةٌ تحت الإجماليّ تجعله يبحث
+              عمّا تغيّر. */}
+          <CouponBox
+            locale={locale}
+            appliedCode={cart.applied_coupon ?? null}
+            disabled={pending}
+          />
 
           {/* 🔴 **ملخّصٌ باطلٌ لا يُعرض برقم.**
               كان الملخّصُ يرجع إلى مجاميع السلّة كلّما غاب العرض. والسلّةُ
