@@ -27,16 +27,28 @@ export async function adminGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function adminPost<T>(path: string, body?: unknown): Promise<T> {
+async function adminSend<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
-    method: "POST",
+    method,
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((json as any)?.error?.message_ar ?? `${res.status}`);
   return json as T;
+}
+
+export async function adminPost<T>(path: string, body?: unknown): Promise<T> {
+  return adminSend<T>("POST", path, body);
+}
+
+export async function adminPatch<T>(path: string, body?: unknown): Promise<T> {
+  return adminSend<T>("PATCH", path, body);
+}
+
+export async function adminDelete<T>(path: string): Promise<T> {
+  return adminSend<T>("DELETE", path);
 }
 
 /** الهللاتُ ⇒ ريالاتٌ بمنزلتين، بحسابٍ صحيحٍ لا عائم (ADR-008). */
