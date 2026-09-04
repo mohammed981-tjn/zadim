@@ -1110,3 +1110,26 @@ export async function removeCartCoupon(cartId: string): Promise<void> {
     cache: "no-store",
   })
 }
+
+export type PasswordResult = { ok: true } | { ok: false; code: string; message: string }
+
+/** يغيّر كلمةَ المرور — **والحاليّةُ تُرسَل ويسألها الخادم**. */
+export async function changePassword(
+  input: { current_password: string; new_password: string },
+  token: string,
+): Promise<PasswordResult> {
+  try {
+    await medusaFetch(`/store/customers/me/password`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof MedusaError) {
+      return { ok: false, code: err.code ?? "UNKNOWN", message: err.message }
+    }
+    return { ok: false, code: "UNKNOWN", message: "تعذّر تغييرُ كلمة المرور." }
+  }
+}

@@ -7,6 +7,7 @@ import { Price } from "@/components/price"
 import { SignOutButton } from "@/components/account/sign-out-button"
 import { AddressBook } from "@/components/account/address-book"
 import { FavoritesList } from "@/components/wishlist/favorites-list"
+import { PasswordForm } from "@/components/account/password-form"
 import { currentCustomer, myFavorites, myOrders, savedAddresses } from "@/lib/auth-actions"
 import { digits } from "@/lib/money"
 import { t, type Locale } from "@/lib/i18n"
@@ -70,6 +71,15 @@ export default async function AccountPage({ params }: { params: Promise<{ locale
         </div>
         <SignOutButton locale={locale} />
       </div>
+
+      {/* كلمةُ المرور — **قبل المفضّلة والعناوين**: إعدادُ أمانٍ يُبحث
+          عنه عند الحاجة، ودفنُه تحت قوائمَ طويلةٍ يجعله كغيره غائباً. */}
+      <section aria-labelledby="password-heading" className="mb-12">
+        <h2 id="password-heading" className="mb-4 text-lg font-bold">
+          {t(locale, "password.heading")}
+        </h2>
+        <PasswordForm locale={locale} />
+      </section>
 
       <section aria-labelledby="favorites-heading" className="mb-12">
         <h2 id="favorites-heading" className="mb-1 text-lg font-bold">
