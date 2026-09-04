@@ -8,7 +8,7 @@ import { Totals } from "@/components/totals"
 import { Price } from "@/components/price"
 import { PriceChangedPanel } from "@/components/checkout/price-changed-panel"
 import { OutOfStockPanel } from "@/components/checkout/out-of-stock-panel"
-import { listShippingOptions, requestQuote, saveAddress, selectShipping, confirmCheckout } from "@/lib/checkout-actions"
+import { requestQuote, saveAddress, selectShipping, confirmCheckout } from "@/lib/checkout-actions"
 import { saveAddress as saveAddressToAccount } from "@/lib/auth-actions"
 import { t, type Locale } from "@/lib/i18n"
 import type {
