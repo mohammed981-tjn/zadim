@@ -1,6 +1,7 @@
 # Zadim store manager's guide
 
-> Last updated: 2026-09-01 — matches phase 11b (the bilingual store).
+> Last updated: 2026-09-04 — four new screens (invoicing · cash-on-
+> delivery · stock adjustments · coupon policies).
 > It describes the panel **as it is today**, and anything that has no
 > screen yet is listed plainly in its own table.
 
@@ -21,15 +22,18 @@ and conclude the system is broken.
 | Bulk operations and undoing them | ✅ `/app/zadim/bulk` |
 | ZATCA invoices and their chain | ✅ `/app/zadim/invoices` |
 | Warehouse picking | ✅ `/app/zadim/picking` |
+| E-invoicing (ZATCA) settings | ✅ `/app/zadim/zatca-settings` |
+| Cash-on-delivery policy · refusals | ✅ `/app/zadim/cod-policy` |
+| Stock adjustments (request/approve/apply) | ✅ `/app/zadim/adjustments` |
+| Coupon policies (per-customer limit · discount cap) | ✅ `/app/zadim/coupon-policies` |
 | Products · prices · stock · orders · customers | ✅ Medusa's own screens |
 | Home page sections (blocks) | ⚙️ API only |
 | **English translation of content** | ⚙️ API only |
 | Return policy · inspection records | ⚙️ API only |
-| Cash-on-delivery policy · refusals | ⚙️ API only |
 | Marketing: segments and templates | ⚙️ API only |
 | Roles and permissions · audit log | ⚙️ API only |
 | Warehouse profiles · alert rules | ⚙️ API only |
-| ZATCA settings · search synonyms · SEO and redirects | ⚙️ API only |
+| Search synonyms · SEO and redirects | ⚙️ API only |
 
 ⚙️ = ask a developer to run it, or wait for its screen. The capability
 exists and is tested; what's missing is its interface.
@@ -178,19 +182,77 @@ everything and report it immediately.
 
 ---
 
-## Payments ⚙️
+## Payments — cash-on-delivery policy `/app/zadim/cod-policy`
 
 Payment today is **cash on delivery**, exclusively.
 
 - **Capture happens after shipping, not before.** No amount is recorded
   for something not yet delivered.
 - **The cash-on-delivery policy** sets its ceiling, the permitted
-  cities, and how many refusals block a customer.
-- **Refusals are logged** — and they are what the blocking decision is
-  built on.
+  cities, and how many refusals block a customer — from this screen,
+  no developer needed.
+- **Refusals are logged and never deleted**, and show on this same
+  screen under the policy — they are what the blocking decision is
+  built on. Forgiving a customer means raising the threshold, not
+  erasing a record.
+
+🔴 **No policy means COD is blocked entirely**, not allowed without
+limits. If the screen shows "COD blocked now", set the policy first.
 
 ⚠️ The other methods (mada · Apple Pay · Tabby · Tamara) are waiting on
 merchant accounts with the providers.
+
+---
+
+## E-invoicing (ZATCA) settings — `/app/zadim/zatca-settings`
+
+🔴 **The most urgent thing the owner is waiting on.** Without the
+seller name and VAT number set, the store sells **with no invoice**,
+and whatever was missed during that gap **can never be backfilled** —
+unlike every other gap in this guide, this one is not recoverable later.
+
+- **Saving the data does not mean issuing is on.** The two switches are
+  separate on purpose: you can enter the data ahead of time, then turn
+  issuing on later once it's verified. The badge at the top of the
+  screen (configured / 🔴 not configured) reflects the **issuing**
+  switch.
+- **The VAT number must be exactly fifteen digits** — the screen
+  rejects anything else before saving.
+
+---
+
+## Stock adjustments — `/app/zadim/adjustments`
+
+A manual correction to stock: a stocktake found a difference, or
+damage, or fixing an earlier mistake.
+
+🔴 **Above a threshold the manager sets (by quantity or by value,
+whichever hits first) a second person's approval is required.** The
+stock only changes after it's applied — not at the request, not at the
+approval. Whoever requested it cannot approve it themselves, **and the
+screen blocks that exactly as the database does.**
+
+- The list filters by state: pending · approved · applied · rejected.
+- The "apply" button only shows once the effect is actually possible.
+
+---
+
+## Coupon policies — `/app/zadim/coupon-policies`
+
+On top of what Medusa's promotion engine already does: a **per-customer
+limit**, a **discount cap in riyals**, and **restricting a coupon to a
+first order**.
+
+- The code, status and percentage are set in Medusa's promotions
+  screen; this screen is our policy layered **on top of it**, and needs
+  the promotion's id (`promotion_id`) from there.
+- 🔴 **A discount cap on a percentage promotion works by rejection, not
+  by clipping** — a cart whose discount exceeds the cap is refused with
+  a message, not clipped down to the cap. The screen warns you of this
+  the moment you enter a cap. For a cap that actually clips, use a
+  **fixed-amount** coupon instead.
+- Deleting a policy does not erase customers' past redemptions — those
+  are a separate ledger.
 
 ---
 
