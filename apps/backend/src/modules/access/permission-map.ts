@@ -93,6 +93,18 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/promotions(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "promotions.manage" },
   { pattern: /^\/campaigns(\/|$)/, methods: ["POST", "PUT", "PATCH", "DELETE"], permission: "coupons.manage" },
 
+  // ── سياساتُ الكوبونات عندنا (بندا ٢٦ و٢٧) ──────────────────────
+  //
+  // تحت `coupons` لا `promotions`: الثاني يملكه Medusa، و`policies`
+  // قد يُلتقط معرّفاً — نفسُ سببِ `returns-flow` و`order-flow`.
+  //
+  // ⚠️ **والقراءةُ تحت `coupons.manage` كالكتابة**، خلافاً لأكثر
+  // مسارات المستودع. لأن ما يُقرأ هنا **سقفُ خصمٍ وحدُّ استعمال** —
+  // وهي معلوماتٌ يبني عليها من يريد استنزافَ العرض. ومن لا يُؤتمن على
+  // ضبطها لا حاجةَ به إلى معرفتها.
+  { pattern: /^\/coupons\/policies(\/|$)/, methods: ["GET"], permission: "coupons.manage" },
+  { pattern: /^\/coupons\/policies(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "coupons.manage" },
+
   // ── وحدة catalog ────────────────────────────────────────────────
   // الخصائصُ جزءٌ من الكتالوج: من يملك المنتجات يملكها. والمرادفاتُ
   // أداةُ تسويقٍ وبحث — بيتُها عند مدير التسويق لا عند مدير المنتجات،
