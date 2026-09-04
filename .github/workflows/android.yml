@@ -150,6 +150,43 @@ jobs:
       # فيُسأل الآن `apksigner` نفسُه — وهو الذي يسأله أندرويد — وتُطبع
       # بصمةُ من وقّع. **ويسقط البناءُ إن لم تكن نسخةُ التشخيص موقَّعة**،
       # لأنها الوحيدةُ الموعودةُ بالتثبيت.
+      # 🔴 **حارسُ السمة — وُلد من انهيارٍ عند الفتح.**
+      #
+      # `LauncherActivity` في `androidbrowserhelper` تنحدر من
+      # `AppCompatActivity`، وهي ترمي عند الإنشاء إن لم تكن سمةُ النشاط
+      # من عائلة `Theme.AppCompat`. والأثرُ: التطبيقُ يُثبَّت ويُفتح
+      # **ويختفي** — بلا رسالةٍ ولا أثرٍ في الشاشة. وقد وقع فعلاً.
+      #
+      # ولا يُفحص بالحفظ: تُقرأ **سلسلةُ الوراثة من المكتبة نفسِها** في
+      # مخبأ Gradle. فإن ترقّت المكتبةُ يوماً وتغيّر أصلُها، يتغيّر حكمُ
+      # هذا الحارس معها بلا أن يعدّله أحد.
+      - name: التحقّق من عائلة السمة
+        run: |
+          set -uo pipefail
+          AAR=$(find ~/.gradle/caches -name "androidbrowserhelper-*.aar" | head -1)
+          if [ -z "$AAR" ]; then echo "::warning::لم يُعثر على AAR — تخطّي الفحص"; exit 0; fi
+          work="$RUNNER_TEMP/abh"; mkdir -p "$work"; unzip -o -q "$AAR" -d "$work"
+          SUPER=$(javap -classpath "$work/classes.jar" \
+            com.google.androidbrowserhelper.trusted.LauncherActivity 2>/dev/null \
+            | head -2 | tr -d '\n')
+          echo "سلسلةُ الوراثة: $SUPER"
+
+          PARENT=$(sed -n 's/.*<style name="Theme.Zadim" parent="\([^"]*\)".*/\1/p' \
+            app/src/main/res/values/themes.xml)
+          echo "سمتُنا تنحدر من: $PARENT"
+
+          if echo "$SUPER" | grep -q "AppCompatActivity"; then
+            if echo "$PARENT" | grep -q "AppCompat"; then
+              echo "✅ النشاطُ يحتاج AppCompat، وسمتُنا منها."
+            else
+              echo "⛔ النشاطُ ينحدر من AppCompatActivity وسمتُنا ليست من Theme.AppCompat."
+              echo "   الأثر: انهيارٌ فورَ الفتح — يُثبَّت ثم يختفي."
+              exit 1
+            fi
+          else
+            echo "ℹ️ النشاطُ لا يحتاج AppCompat — لا قيدَ على السمة."
+          fi
+
       - name: التحقّق من التوقيع
         run: |
           set -uo pipefail
