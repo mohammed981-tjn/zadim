@@ -9,6 +9,7 @@ import { ZATCA_MODULE } from "../zatca";
 import type ZatcaModuleService from "../zatca/service";
 import { BULK_MODULE } from "../bulk";
 import type BulkModuleService from "../bulk/service";
+import { computeBusinessMetrics } from "./business-metrics";
 
 /**
  * أرقامُ اللوحة.
@@ -107,7 +108,13 @@ export async function computeMetrics(scope: any) {
 
   return ({
     computed_at: new Date().toISOString(),
-    orders: { total: (orderRows as any[]).length, by_status: byStatus, revenue_halalas: revenue },
+    // 🔴 `gmv_halalas` **لا `revenue_halalas`** — والتسميةُ هي التصحيح.
+    //
+    // كان اسمُه «الإيراد» وهو ليس إيراداً: يشمل الضريبةَ (مالُ الدولة
+    // لا مالُنا) والشحنَ وما سيُرتجَع. فمن قرأه إيراداً قرأ رقماً أكبرَ
+    // من الحقيقة بنحو الخُمس، **ولا شيءَ في الشاشة يقول له ذلك**.
+    // والحسابُ لم يتغيّر — الاسمُ وحدَه، وهو ما كان يكذب.
+    orders: { total: (orderRows as any[]).length, by_status: byStatus, gmv_halalas: revenue },
     inventory: {
       stocked,
       reserved,
@@ -119,5 +126,8 @@ export async function computeMetrics(scope: any) {
     events: { pending: pendingEvents },
     invoices: { count: invoiceCount, chain_ok: chain.ok },
     bulk: { total: (bulkOps as any[]).length, by_status: bulkByStatus },
+    // ثلاثةَ عشرَ رقماً لكلٍّ تعريفٌ مكتوب — و`business-rules.md` هو
+    // المرجع. ولا رقمَ هنا بلا سطرٍ هناك.
+    business: await computeBusinessMetrics(scope),
   });
 }

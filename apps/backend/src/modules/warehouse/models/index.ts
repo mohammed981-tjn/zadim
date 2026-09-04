@@ -3,3 +3,5 @@
 export { LocationProfile } from "./location-profile";
 export { StockMovement } from "./stock-movement";
 export { StockAlertRule } from "./stock-alert-rule";
+export { AdjustmentPolicy } from "./adjustment-policy";
+export { StockAdjustment } from "./stock-adjustment";

@@ -1,7 +1,13 @@
 import { MedusaService } from "@medusajs/framework/utils";
-import { CustomerSegment, NotificationTemplate, NotificationSend } from "./models";
+import {
+  CustomerSegment,
+  NotificationTemplate,
+  NotificationSend,
+  NotificationAttempt,
+} from "./models";
 import { matchesSegment, type CustomerFacts, type SegmentDefinition } from "./segments";
 import { planSends, sendKey, type DueEvent, type SendPlan, type TemplateRow } from "./dispatcher";
+import { nextState, DEFAULT_RETRY_POLICY, type RetryPolicy, type AttemptOutcome } from "./retry";
 
 /**
  * خدمةُ التسويق: الشرائحُ والقوالبُ وسجلُّ الإرسال.
@@ -16,6 +22,7 @@ class MarketingModuleService extends MedusaService({
   CustomerSegment,
   NotificationTemplate,
   NotificationSend,
+  NotificationAttempt,
 }) {
   /** هل ينطبق تعريفُ شريحةٍ على عميل؟ — منطقٌ خالصٌ يُمرَّر إليه. */
   matches(def: SegmentDefinition | null, facts: CustomerFacts): boolean {
@@ -47,6 +54,9 @@ class MarketingModuleService extends MedusaService({
           event_id: plan.event_id,
           channel: plan.channel,
           recipient: plan.recipient,
+          // 🔴 والنصُّ يُحفظ مع الحجز: بلا هذا تُعاد رسالةٌ فارغة.
+          subject: plan.subject ?? null,
+          body: plan.body ?? "",
           status: "queued",
         } as any,
       ]);
@@ -83,7 +93,9 @@ class MarketingModuleService extends MedusaService({
       provider?: string;
       error?: string;
       suppressed?: boolean;
-    }>
+    }>,
+    /** سياسةُ الإعادة — تُمرَّر لأن صفَّها في وحدةٍ أخرى (`notify`). */
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY
   ): Promise<{ planned: number; claimed: number; sent: number; suppressed: number }> {
     const templates = (await this.listNotificationTemplates({})) as unknown as TemplateRow[];
     const plans = planSends(event, templates, recipient);
@@ -100,23 +112,56 @@ class MarketingModuleService extends MedusaService({
       if (!send) continue;
       const result = await send(plan);
 
+      // 🔴 **والمحاولةُ تُسجَّل هنا أيضاً — لا في المُعيد وحدَه.**
+      //
+      // وهذا ليس تنميقَ سجلّات: لو لم تُسجَّل، بقي الصفُّ
+      // `attempts = 0` بعد محاولةٍ وقعت فعلاً — وذلك **بالضبط** شرطُ
+      // «حُجز ولم يُحاوَل قطّ» عند المُعيد. فيلتقطه المُعيدُ بعد
+      // دقائق ويُسلّمه ثانيةً: نسخةٌ ثانيةٌ عند العميل من مزوّدٍ
+      // حقيقيّ. والمزوّدُ المسجِّلُ كان سيُخفي ذلك (لا يُرسل شيئاً).
+      const attemptNo = await this.logAttempt(row.id, result);
+
       // ⚠️ **والمُلغي اشتراكَه يُوسَم `suppressed` لا `failed`.**
       // والفرقُ ليس تجميلياً: `failed` تدخل تقاريرَ الأعطال فتُقرأ
       // مشكلةً تقنيةً تُطارَد، و`suppressed` قرارُ عميلٍ يُحترم.
-      const status = result.suppressed ? "suppressed" : result.status;
+      //
+      // والقرارُ من **نفس الدالّة** التي يستعملها المُعيد: مسارانِ
+      // يقرّران الحالةَ بمنطقين ينحرفان يوماً، وينحرف معهما الشطب.
+      const decision = nextState(result as AttemptOutcome, attemptNo, policy);
 
       await this.updateNotificationSends({
         id: row.id,
-        status,
+        status: decision.status,
         provider: result.provider ?? null,
         error: result.error ?? null,
+        next_attempt_at: decision.next_attempt_at,
       } as any);
 
-      if (status === "sent") sent++;
-      if (status === "suppressed") suppressed++;
+      if (decision.status === "sent") sent++;
+      if (decision.status === "suppressed") suppressed++;
     }
 
     return { planned: plans.length, claimed, sent, suppressed };
+  }
+
+  /**
+   * تسجيلُ محاولةٍ في الدفتر — و**رقمُها تحسبه القاعدة** تحت قفلِ صفّ
+   * الأب (`Migration20260904000041`). ولو حسبه التطبيقُ لكتب مُرسِلان
+   * متزامنان نفسَ الرقم.
+   *
+   * ⚠️ ويرمي إن كانت الرسالةُ نهائيّة — وهو الرفضُ الذي يجعل الإرسالَ
+   * مرّتين مستحيلَ التسجيل. فلا يُبتلع هنا: المُنادي يقرّر.
+   */
+  async logAttempt(sendId: string, outcome: AttemptOutcome): Promise<number> {
+    const [row] = (await this.createNotificationAttempts([
+      {
+        send_id: sendId,
+        status: outcome.suppressed ? "suppressed" : outcome.status,
+        provider: outcome.provider ?? null,
+        error: outcome.error ?? null,
+      } as any,
+    ])) as any[];
+    return Number(row?.attempt_no) || 1;
   }
 
   key(eventId: string, channel: string, recipient: string): string {

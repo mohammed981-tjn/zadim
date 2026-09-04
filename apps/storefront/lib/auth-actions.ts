@@ -19,6 +19,8 @@ import {
   type SavedAddress,
   type SubmitReviewResult,
   type WishlistEntry,
+  changePassword,
+  type PasswordResult,
 } from "@/lib/medusa"
 
 /**
@@ -290,4 +292,21 @@ export async function writeReview(
   const res: SubmitReviewResult = await submitReview(productId, input, token)
   if (res.ok) revalidatePath("/", "layout")
   return { ok: res.ok, message: res.message }
+}
+
+/**
+ * تغييرُ كلمة المرور — فعلٌ خادميّ.
+ *
+ * والرمزُ يُقرأ من ملفّ التعريف `httpOnly` لا يُمرَّر من العميل: صفحةٌ
+ * تُمرّر رمزَها في جسمِ طلبٍ تُسرّبه إلى أيّ سكربتٍ يقرأ الشبكة.
+ */
+export async function updatePassword(input: {
+  current_password: string
+  new_password: string
+}): Promise<PasswordResult> {
+  const token = await readSession()
+  if (!token) {
+    return { ok: false, code: "UNAUTHENTICATED", message: "سجّلِ الدخولَ أوّلاً." }
+  }
+  return changePassword(input, token)
 }

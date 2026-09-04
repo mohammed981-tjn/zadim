@@ -118,6 +118,7 @@
 | **المرتجعات** | `POST /admin/returns/:id/approve` · `/reject` · `/refund` |
 | **المحتوى** | `GET/PUT /admin/pages/:slug/blocks` — **الترتيبُ سحبٌ وإفلات** |
 | **الشراء** | CRUD على `suppliers` · `purchase_orders` + `POST /:id/receive` |
+| **الإشعارات** | `GET /admin/notifications/log` (سجلُّ التسليم — `audit.read`، **والعناوينُ مقنَّعة**) · `GET/PATCH /admin/notifications/policy` (حدُّ المحاولات والمهلة — `settings.manage`) |
 | **المالية** | `GET /admin/reports/sales` · **`/margin`** · `/settlements` |
 | **النظام** | `users` · `roles` · `settings` · **`GET /admin/audit`** |
 

@@ -131,11 +131,49 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // الفريقَ بتنبيهاتٍ فيتجاهلها — كلاهما قرارُ تشغيلٍ لا قرارُ قراءة.
   { pattern: /^\/warehouse\/alert-rules(\/|$)/, methods: ["GET"], permission: "inventory.read" },
   { pattern: /^\/warehouse\/alert-rules(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "locations.manage" },
+  // ── تسوياتُ المخزون — **والموافقةُ صلاحيةٌ أخرى** ──────────────
+  //
+  // 🔴 `inventory.adjust` يطلب، و`inventory.stocktake` يوافق ويطبّق.
+  // وتركيزُهما في صلاحيةٍ واحدةٍ يجعل «أربعُ عيونٍ» عبارةً في وثيقة:
+  // من يملك الاثنين يطلب ويوافق على نفسه — والقيدُ في القاعدة يمنع
+  // ذلك بالهويّة، والصلاحيةُ تمنعه بالدور. **وطبقتان لا واحدة.**
+  { pattern: /^\/warehouse\/adjustments\/[^/]+\/(approve|apply)(\/|$)/, methods: ["POST"], permission: "inventory.stocktake" },
+  { pattern: /^\/warehouse\/adjustments(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/warehouse\/adjustments(\/|$)/, methods: ["POST"], permission: "inventory.adjust" },
+  { pattern: /^\/warehouse\/adjustment-policy(\/|$)/, methods: ["GET"], permission: "settings.read" },
+  { pattern: /^\/warehouse\/adjustment-policy(\/|$)/, methods: ["PATCH", "POST"], permission: "settings.manage" },
   { pattern: /^\/warehouse\/profiles(\/|$)/, methods: ["GET"], permission: "inventory.read" },
   { pattern: /^\/warehouse\/profiles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "locations.manage" },
   // معاينةُ الخطة قراءةٌ لا تحجز شيئاً — لكنها تكشف توزّعَ المخزون على
   // المستودعات، وذاك ما لا يُعرض لمن لا يقرأ المخزون أصلاً.
   { pattern: /^\/warehouse\/allocate(\/|$)/, methods: ["POST"], permission: "inventory.read" },
+
+  // ── وحدة notify — سجلُّ التسليم وسياسةُ الإعادة ─────────────────
+  //
+  // 🔴 والسجلُّ تحت `audit.read` لا `settings.read`: هو دفترُ وقائعَ
+  // عن عملاءَ بأعيانهم — من راسلناه ومتى وبأيّ نتيجة. ومن لا يُؤتمن
+  // على سجلّ التدقيق لا يُؤتمن عليه. (والعناوينُ مقنَّعةٌ فيه أصلاً،
+  // فالصلاحيةُ طبقةٌ ثانيةٌ لا وحيدة.)
+  { pattern: /^\/notifications\/log(\/|$)/, methods: ["GET"], permission: "audit.read" },
+  { pattern: /^\/notifications\/policy(\/|$)/, methods: ["GET"], permission: "settings.read" },
+  { pattern: /^\/notifications\/policy(\/|$)/, methods: ["PATCH", "POST"], permission: "settings.manage" },
+
+  // ── وحدة procurement (بندا ٣٢ و٣٣) ──────────────────────────────
+  //
+  // 🔴 والفصلُ هنا مقصودٌ ومكتوبٌ في `05-rbac-matrix.md`: **من يُصدر
+  // الأمرَ ليس من يعتمده**. مديرُ المخزون ينشئ ويستلم، والمالية تعتمد.
+  // وتركيزُهما في يدٍ واحدة يجعل «اشترِ من نفسك» مساراً كاملاً: أمرٌ
+  // يُنشأ ويُعتمد ويُستلَم بلا عينٍ ثانية.
+  //
+  // ⚠️ و**الاستلامُ تحت `inventory.adjust` لا تحت `purchase_orders`**:
+  // هو تغييرُ مخزونٍ حقيقيٍّ على الرفّ، ومن لا يُؤتمن على التسوية لا
+  // يُؤتمن على أن يقول «وصلت مئةٌ» وهي تسعون.
+  { pattern: /^\/procurement\/suppliers(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/procurement\/suppliers(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "suppliers.manage" },
+  { pattern: /^\/procurement\/purchase-orders\/[^/]+\/receive(\/|$)/, methods: ["POST"], permission: "inventory.adjust" },
+  { pattern: /^\/procurement\/purchase-orders\/[^/]+\/place(\/|$)/, methods: ["POST"], permission: "purchase_orders.approve" },
+  { pattern: /^\/procurement\/purchase-orders(\/|$)/, methods: ["GET"], permission: "inventory.read" },
+  { pattern: /^\/procurement\/purchase-orders(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "purchase_orders.create" },
 
   // ── وحدة orders ─────────────────────────────────────────────────
   // كلاهما **قراءةٌ فقط**: جدولُ الانتقالات يُغيَّر بهجرةٍ تُراجَع لا
