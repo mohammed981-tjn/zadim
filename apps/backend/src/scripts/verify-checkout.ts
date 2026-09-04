@@ -323,6 +323,133 @@ export default async function verifyCheckout({ container }: ExecArgs) {
       ? pass("والشاهدُ الموجب: نفسُ السلّة بعنوانٍ كاملٍ تمرّ")
       : fail(`سلّةٌ بعنوانٍ كاملٍ رُفضت: ${okOut.status} ${JSON.stringify(okOut.body).slice(0, 200)}`);
 
+    // ── ٠ب) 🔴 سعرٌ لا تقسمه الضريبةُ صحيحاً ⇒ يجب أن يُشترى ─────
+    //
+    // قِيس في 2026-09-04 أن منتجاً سعرُه **٩٩٫٩٩ ريالاً** كان لا يُشترى
+    // من هذا المتجر إطلاقاً: ضريبةُ ١٥٪ عليه ١٨٧٤٫٨٥ هللة، فالمجموعُ
+    // كسريّ، وعمودُ العرض `integer` يقرّبه عند الكتابة — ثم يُقارَن
+    // المقرَّبُ بالكسريّ فيختلفان **في كل محاولة**. حلقةٌ لا تنتهي،
+    // ورسالتُها «تغيّر سعرُك» ولم يتغيّر شيء.
+    //
+    // ولم تمسكه بوّابةٌ من خمسَ عشرة لأن ضريبةَ ١٥٪ تُنتج هللةً صحيحةً
+    // **فقط إن كان المبلغُ من مضاعفات العشرين** — وسعرا البذرة كلاهما
+    // كذلك صدفةً. فالفحصُ هنا يختار سعراً **ليس** من مضاعفاتها عمداً:
+    // بذرةٌ «مريحة» تُخفي عطباً في كل متجرٍ حقيقيّ.
+    logger.info("== سعرٌ ذو ضريبةٍ كسرية ⇒ يُشترى ==");
+
+    const FRACTIONAL_PRICE = 9999; // ٩٩٫٩٩ ريالاً — أشهرُ شكلِ سعرٍ في التجزئة
+    await setPrice(FRACTIONAL_PRICE);
+
+    // شاهدٌ موجب على أن الفحصَ ليس أعمى: الضريبةُ على هذا السعر كسريّةٌ
+    // فعلاً. ولو صارت البذرةُ يوماً بسعرٍ مريحٍ لصار الفحصُ يمرّ بلا أن
+    // يفحص شيئاً — وهذا يمنعه.
+    const fracCart = await newCart(1, true);
+    createdCarts.push(fracCart);
+    const { data: fracRows } = await query.graph({
+      entity: "cart",
+      fields: ["id", "tax_total", "total"],
+      filters: { id: fracCart },
+    });
+    const liveTotal = Number((fracRows[0] as any)?.total ?? 0);
+    Number.isInteger(liveTotal)
+      ? fail(`الشاهدُ الموجب سقط: المجموعُ الحيُّ ${liveTotal} صحيحٌ بالهللة — فالسعرُ المختار لا يُنتج كسراً ولا يفحص شيئاً`)
+      : pass(`الشاهدُ الموجب: المجموعُ الحيُّ كسريٌّ فعلاً (${liveTotal})`);
+
+    // 🔴 **والعرضُ أوّلاً — وإلا فالفحصُ أعمى.**
+    //
+    // حارسُ المجموع في `orchestrate.ts` مشروطٌ بـ`if (quote && …)`: بلا
+    // عرضٍ مخزَّنٍ لا مقارنةَ ولا رفض. فبوّابةٌ تنادي الإتمامَ وحدَه
+    // تمرّ خضراءَ على العطب نفسِه (قِيس: مرّت بعد نزع الإصلاح).
+    // والعميلُ يرى العرضَ دائماً قبل أن يؤكّد — فهذا مسارُه لا ذاك.
+    const fracQuote = await runQuote(container, fracCart);
+    fracQuote.status === 201
+      ? pass("وعرضُ السلّة سُجِّل قبل التأكيد — كما يفعل العميل")
+      : fail(`تعذّر تسجيلُ العرض: ${fracQuote.status} ${JSON.stringify(fracQuote.body).slice(0, 160)}`);
+
+    const beforeFrac = await countOrders();
+    const fracOut = await runCheckout(container, fracCart, `gate-frac-${Date.now()}`);
+    const afterFrac = await countOrders();
+
+    fracOut.status === 201
+      ? pass(`سعرٌ ${FRACTIONAL_PRICE} هللة (${(FRACTIONAL_PRICE / 100).toFixed(2)} ريال) يُشترى`)
+      : fail(
+          `سعرٌ عاديٌّ لا يُشترى: ${fracOut.status} ${JSON.stringify(fracOut.body).slice(0, 220)}`
+        );
+    afterFrac === beforeFrac + 1
+      ? pass(`وأُنشئ طلبٌ واحدٌ فعلاً (${beforeFrac} ⇐ ${afterFrac})`)
+      : fail(`عددُ الطلبات لم يزدْ واحداً: ${beforeFrac} ⇐ ${afterFrac}`);
+
+    // ── ٠ج) وضجيجُ التقريب لا يمنع بيعاً ─────────────────────────
+    //
+    // إصلاحُ ADR-034 كان يمكن أن يستبدل عائقاً بعائق: التقريبُ يقع على
+    // كلّ مركّبٍ على حدة، و`round(س) + round(ص)` قد لا يساوي
+    // `round(س+ص)`. قِيس أن ١٢ تركيبةً من ١٠٥ تفعل ذلك — ومنها هذه
+    // بالضبط: منتجٌ ٩٩٫٩٠ وشحنٌ ١٩٫٩٩ ⇒ `11489 + 2299 = 13788` بينما
+    // `round(total) = 13787`.
+    //
+    // فصار التوازنُ يُفحص على **الخام** حيث هو ثابتٌ حسابيٌّ يصحّ
+    // بالضبط، لا على المقرَّب حيث يقيس الضجيج. والتسامحُ يبقى صفراً.
+    // (نُقض: بإعادة الفحص إلى المقرَّب يُرفض هذا البيعُ بـTOTALS_MISMATCH
+    // وفرقُه هللةٌ واحدة.)
+    logger.info("== تقريبٌ يفترق بهللة ⇒ لا يمنع البيع ==");
+
+    const shipPriceRow = (
+      await pg.raw(
+        `select pr."id", pr."amount" from "zadim"."shipping_option_price_set" sops
+           join "zadim"."price" pr on pr."price_set_id" = sops."price_set_id"
+          where sops."shipping_option_id" = ? and pr."currency_code" = 'sar' limit 1`,
+        [shipOption.id]
+      )
+    ).rows[0];
+    const originalShip = Number(shipPriceRow.amount);
+
+    try {
+      await pg.raw(`update "zadim"."price" set "amount" = 1999 where "id" = ?`, [shipPriceRow.id]);
+      await setPrice(9990);
+
+      const roundCart = await newCart(1, true);
+      createdCarts.push(roundCart);
+      const { data: rc } = await query.graph({
+        entity: "cart",
+        fields: ["id", "item_total", "shipping_total", "total"],
+        filters: { id: roundCart },
+      });
+      const rcv: any = rc[0];
+      const partsSum =
+        Math.round(Number(rcv.item_total ?? 0)) + Math.round(Number(rcv.shipping_total ?? 0));
+      const roundedTotal = Math.round(Number(rcv.total ?? 0));
+
+      // شاهدٌ موجب: الفرقُ قائمٌ فعلاً — وإلا فالفحصُ يمرّ بلا أن يفحص.
+      partsSum !== roundedTotal
+        ? pass(`الشاهدُ الموجب: مجموعُ المقرَّبَين ${partsSum} ≠ المجموعُ المقرَّب ${roundedTotal}`)
+        : fail(
+            `الشاهدُ الموجب سقط: ${partsSum} = ${roundedTotal} — الأرقامُ المختارةُ لا تُنتج فرقَ تقريبٍ فلا تفحص شيئاً`
+          );
+
+      await runQuote(container, roundCart);
+      const beforeRound = await countOrders();
+      const roundOut = await runCheckout(container, roundCart, `gate-round-${Date.now()}`);
+      const afterRound = await countOrders();
+
+      roundOut.status === 201
+        ? pass("وفرقُ التقريب لا يمنع البيع")
+        : fail(
+            `فرقُ تقريبٍ بهللةٍ منع بيعاً: ${roundOut.status} ${JSON.stringify(roundOut.body).slice(0, 220)}`
+          );
+      afterRound === beforeRound + 1
+        ? pass(`وأُنشئ طلبٌ واحد (${beforeRound} ⇐ ${afterRound})`)
+        : fail(`عددُ الطلبات لم يزدْ واحداً: ${beforeRound} ⇐ ${afterRound}`);
+    } finally {
+      // أجرةُ الشحن تُعاد مهما وقع: بوّابةٌ تترك القاعدةَ مغيَّرةً تُفسد
+      // ما بعدها وتُظهر عطباً في فحصٍ بريء.
+      await pg.raw(`update "zadim"."price" set "amount" = ? where "id" = ?`, [
+        originalShip,
+        shipPriceRow.id,
+      ]);
+    }
+
+    await setPrice(BASE_PRICE);
+
     // ── ١) تغيّرُ السعر بين العرض والإتمام ──────────────────────
     logger.info("== البوّابة: تغيّرُ السعر ⇒ يُرفض قبل أخذ المال ==");
 
