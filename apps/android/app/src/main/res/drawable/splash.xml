@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  شاشةُ الإقلاع: لونٌ ثمّ علامةٌ موسَّطة.
+
+  ⚠️ **والعلامةُ صورةٌ نقطيّةٌ لا متجه.** خلفيّةُ النافذة يُنفلتها
+  النظامُ قبل أن يُنشأ النشاطُ، بمُحمِّلِ مواردَ لا يمرّ بطبقة التوافق —
+  ومتجهٌ داخل `layer-list` هناك نمطٌ غيرُ مضمونٍ عبر الإصدارات، يرمي
+  `InflateException` على بعضها فينهار التطبيقُ قبل أن يرسم إطاراً.
+
+  والمتجهُ `ic_zadim_mark` يبقى للاستعمالات التي تمرّ بطبقة التوافق.
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
   <item android:drawable="@color/backgroundColor" />
-  <item android:drawable="@drawable/ic_zadim_mark" android:gravity="center" />
+  <item>
+    <bitmap
+        android:src="@drawable/splash_mark"
+        android:gravity="center" />
+  </item>
 </layer-list>

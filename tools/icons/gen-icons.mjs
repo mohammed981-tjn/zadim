@@ -62,6 +62,20 @@ for (const [bucket, size] of Object.entries(DPI)) {
   made.push(await png(iconSvg({ radius: 32, coverage: 0.7 }), size, `${RES}/mipmap-${bucket}/ic_launcher_round.png`))
 }
 
+// ── أندرويد: صورةُ شاشة الإقلاع ─────────────────────────────────────
+//
+// 🔴 **صورةٌ نقطيّةٌ لا متجه — وهذا قرارٌ لا تفضيل.**
+//
+// خلفيّةُ النافذة (`android:windowBackground`) يُنفلتها النظامُ **قبل
+// أن يُنشأ النشاط**، بمُحمِّلِ مواردَ لا يمرّ بطبقة التوافق. ومتجهٌ
+// داخل `layer-list` هناك نمطٌ غيرُ مضمونٍ عبر الإصدارات: ينفلت على
+// جهازٍ ويرمي `InflateException` على آخر — **فينهار التطبيقُ قبل أن
+// يرسم إطاراً**، وهو ما لا يُميَّز عن أيّ انهيارِ إقلاعٍ آخر.
+//
+// وBubblewrap — وهو المولّدُ المرجعيُّ لتطبيقات TWA — يستعمل صورةً
+// نقطيّةً هنا. فلا سببَ للمخالفة.
+made.push(await png(iconSvg({ radius: 28, coverage: 0.7 }), 512, `${RES}/drawable/splash_mark.png`))
+
 // ── أندرويد: المتجهات ───────────────────────────────────────────────
 async function xml(out, body) {
   await mkdir(dirname(out), { recursive: true })

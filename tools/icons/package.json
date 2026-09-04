@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "description": "مولّدُ أصولِ العلامة — يُشغَّل يدوياً حين تتغيّر العلامة، ومخرجاتُه ملتزَمةٌ في المستودع.",
-  "scripts": { "gen": "node gen-icons.mjs" },
-  "dependencies": { "sharp": "^0.34.0" }
+  "scripts": {
+    "gen": "node gen-icons.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
 }

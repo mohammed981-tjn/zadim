@@ -224,9 +224,16 @@ jobs:
       - name: تشغيلٌ حقيقيٌّ على محاكٍ
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          # ⚠️ **٣٠ لا ٣٤، ومهلةٌ نصفُ ساعة.** أقلع المحاكي في ١٣ دقيقةً
+          # مرّتين ثمّ تجاوز المهلةَ في الثالثة — فمهلةُ الأداة الافتراضية
+          # أضيقُ من واقع مُشغِّلات جيت هوب. وصورةُ ٣٠ أخفُّ إقلاعاً،
+          # و`google_apis` تبقى لأنها تحمل Chrome — وبلا Chrome يسقط
+          # التطبيقُ إلى WebView فلا نفحص المسارَ الحقيقيّ.
+          api-level: 30
           arch: x86_64
           target: google_apis
+          emulator-boot-timeout: 1800
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -camera-back none
           disable-animations: true
           working-directory: apps/android
           # ⚠️ **الأداةُ تشغّل كلَّ سطرٍ وحدَه بـ`sh -c`** — لا كسكربتٍ
