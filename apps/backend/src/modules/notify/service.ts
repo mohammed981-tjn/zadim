@@ -1,6 +1,6 @@
 import { pathToFileURL } from "url";
 import { MedusaService } from "@medusajs/framework/utils";
-import { NotificationOptout } from "./models";
+import { NotificationOptout, NotifyPolicy } from "./models";
 import { discoverNotifyProviders } from "./discover";
 import type { NotifyProvider, SendOutcome } from "./contract";
 import type { SendPlan } from "../marketing/dispatcher";
@@ -11,7 +11,7 @@ import type { SendPlan } from "../marketing/dispatcher";
  * وهي الطرفُ الذي يُطلق الطابورَ الذي بنته دفعةُ المفضّلة: صار للأحداث
  * مستقبِلون، وصار لهم الآن مَن يُسلِّم — ومَن يُسكِت.
  */
-class NotifyModuleService extends MedusaService({ NotificationOptout }) {
+class NotifyModuleService extends MedusaService({ NotificationOptout, NotifyPolicy }) {
   private providers: NotifyProvider[] = [];
   private loading: Promise<void> | null = null;
   /** ما تعذّر تحميلُه ولماذا — يُقرأ ولا يُبتلع. */
@@ -67,6 +67,27 @@ class NotifyModuleService extends MedusaService({ NotificationOptout }) {
   async problems(): Promise<string[]> {
     await this.ensureProviders();
     return [...this.loadErrors];
+  }
+
+  /**
+   * سياسةُ الإعادة — **من صفّها لا من الكود** (بند ٤٨).
+   *
+   * ⚠️ وجدولٌ فارغٌ يُعيد الافتراضيّةَ **لا تعطيلاً**: هجرةٌ لم تُشغَّل
+   * يجب ألّا تُسكِت الطابورَ صامتاً — وهو أسوأُ أنواع العطل، لأن
+   * العدّاداتِ تبقى خضراء.
+   */
+  async retryPolicy(): Promise<{
+    max_attempts: number;
+    retry_after_seconds: number;
+    is_enabled: boolean;
+  }> {
+    const [row] = (await this.listNotifyPolicies({}, { take: 1 })) as any[];
+    if (!row) return { max_attempts: 3, retry_after_seconds: 300, is_enabled: true };
+    return {
+      max_attempts: Number(row.max_attempts),
+      retry_after_seconds: Number(row.retry_after_seconds),
+      is_enabled: row.is_enabled !== false,
+    };
   }
 
   register(provider: NotifyProvider): void {

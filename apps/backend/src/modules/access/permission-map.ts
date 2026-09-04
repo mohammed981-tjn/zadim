@@ -137,6 +137,16 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   // المستودعات، وذاك ما لا يُعرض لمن لا يقرأ المخزون أصلاً.
   { pattern: /^\/warehouse\/allocate(\/|$)/, methods: ["POST"], permission: "inventory.read" },
 
+  // ── وحدة notify — سجلُّ التسليم وسياسةُ الإعادة ─────────────────
+  //
+  // 🔴 والسجلُّ تحت `audit.read` لا `settings.read`: هو دفترُ وقائعَ
+  // عن عملاءَ بأعيانهم — من راسلناه ومتى وبأيّ نتيجة. ومن لا يُؤتمن
+  // على سجلّ التدقيق لا يُؤتمن عليه. (والعناوينُ مقنَّعةٌ فيه أصلاً،
+  // فالصلاحيةُ طبقةٌ ثانيةٌ لا وحيدة.)
+  { pattern: /^\/notifications\/log(\/|$)/, methods: ["GET"], permission: "audit.read" },
+  { pattern: /^\/notifications\/policy(\/|$)/, methods: ["GET"], permission: "settings.read" },
+  { pattern: /^\/notifications\/policy(\/|$)/, methods: ["PATCH", "POST"], permission: "settings.manage" },
+
   // ── وحدة procurement (بندا ٣٢ و٣٣) ──────────────────────────────
   //
   // 🔴 والفصلُ هنا مقصودٌ ومكتوبٌ في `05-rbac-matrix.md`: **من يُصدر

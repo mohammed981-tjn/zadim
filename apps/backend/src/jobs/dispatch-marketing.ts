@@ -113,6 +113,10 @@ export default async function dispatchMarketing(container: MedusaContainer) {
   const marketing = container.resolve(MARKETING_MODULE) as MarketingModuleService;
   const notify = container.resolve(NOTIFY_MODULE) as NotifyModuleService;
 
+  // سياسةُ الإعادة تُقرأ مرّةً للدورة كلِّها: صفٌّ واحدٌ لا يتغيّر في
+  // أثنائها، وقراءتُه لكل رسالةٍ نداءُ قاعدةٍ بلا مقابل.
+  const policy = await notify.retryPolicy();
+
   const pending = (await orders.pendingEvents(BATCH)) as any[];
   if (!pending.length) return;
 
@@ -161,7 +165,12 @@ export default async function dispatchMarketing(container: MedusaContainer) {
         // بلا دالّةِ إرسالٍ يُخطّط ويحجز ويترك الحالةَ `queued` أبداً.
         // ويُمرَّر `deliver` لا مزوّدٌ بعينه: هو من يفحص إلغاءَ
         // الاشتراك ويختار مزوّدَ القناة.
-        const out = await marketing.dispatch(due, target, (plan) => notify.deliver(plan));
+        const out = await marketing.dispatch(
+          due,
+          target,
+          (plan) => notify.deliver(plan),
+          policy
+        );
         planned += out.planned;
         claimed += out.claimed;
         sent += out.sent;
