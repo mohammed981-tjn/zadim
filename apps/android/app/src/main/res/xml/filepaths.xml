@@ -1,10 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ما يجوز لـChrome قراءتُه من مساحةِ التطبيق. ومحصورٌ في مجلَّد التنزيلات
-  الخاصِّ بالتطبيق: أوسعُ منه (`.` أو `files/`) يفتح مساحتَه كلَّها لعمليّةٍ
-  أخرى — وهي هنا Chrome، لكنّ السعةَ تُمنح مرّةً وتُساء بعدها.
+  ما يجوز لـChrome قراءتُه من مساحةِ التطبيق.
+
+  ── 🔴 `twa_splash` ليس اختيارياً: بدونه لا يفتح التطبيقُ إطلاقاً ──
+
+  حين يرى `androidbrowserhelper` وسمةَ `SPLASH_IMAGE_DRAWABLE` يشغّل
+  استراتيجيّةَ شاشةِ إقلاع: **ينسخ الصورةَ إلى `files/twa_splash/`** ثمّ
+  يسلّمها إلى Chrome بـ`FileProvider.getUriForFile()`. و`FileProvider`
+  يرمي `IllegalArgumentException: Failed to find configured root that
+  contains …` إن لم يكن المسارُ مُصرَّحاً هنا.
+
+  ويقع ذلك **عند الفتح، قبل أن يُرسم إطارٌ واحد** — فيُثبَّت التطبيقُ
+  ويُفتح **ويختفي**، بلا رسالةٍ ولا أثرٍ يراه المستخدم.
+
+  ⚠️ وقد وقع هذا فعلاً: كان هذا الملفُّ يصرّح بـ`downloads/` وحدَه،
+  بحجّةٍ أمنيّةٍ مكتوبةٍ هنا («أوسعُ منه يفتح مساحتَه كلَّها»). والحجّةُ
+  صحيحةٌ في ذاتها — والتضييقُ الذي يمنع التطبيقَ من الفتح ليس تضييقاً
+  بل تعطيل. فالمسارُ **يُصرَّح بعينه**: `twa_splash` وحدَه، لا `files/`
+  كلُّها.
 -->
 <paths>
+  <!-- شاشةُ الإقلاع — يكتبها androidbrowserhelper ويقرأها Chrome. -->
+  <files-path name="twa_splash" path="twa_splash/" />
+
+  <!-- ما ينزّله المستخدمُ من داخل التطبيق. -->
   <files-path name="downloads" path="downloads/" />
   <cache-path name="cache_downloads" path="downloads/" />
 </paths>
