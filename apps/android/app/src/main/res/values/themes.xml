@@ -1,10 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <!--
-    السمةُ الأساس: `NoActionBar` لأن الترويسةَ ترسمها الصفحةُ نفسُها،
-    وشريطُ نظامٍ فوقها ترويسةٌ ثانيةٌ فارغة.
+    🔴 **السمةُ من عائلة AppCompat، ولا خيارَ في ذلك.**
+
+    كانت `android:Theme.DeviceDefault.Light.NoActionBar` — اختيرت لتجنّب
+    تبعيّةِ AppCompat. وكان ذلك **عطباً قاتلاً**: `LauncherActivity` في
+    `androidbrowserhelper` تنحدر من `AppCompatActivity`، وهي ترمي عند
+    الإنشاء:
+
+        You need to use a Theme.AppCompat theme (or descendant)
+        with this activity.
+
+    فينهار التطبيقُ **قبل أن يرسم إطاراً واحداً**: يُثبَّت، ويُفتح،
+    ويختفي. ولا رسالةَ للمستخدم ولا شيءَ في الشاشة — وهو ما قيس على
+    جهازٍ حقيقيّ.
+
+    ⚠️ والتبعيّةُ لم تكن تُوفَّر أصلاً: `androidbrowserhelper` يجرّ
+    AppCompat معه، فالتجنّبُ كان وهماً — تجنّبنا **السمةَ** لا الحزمة.
+
+    وحارسٌ في البوّابة يفحص هذا الآن: يقرأ سلسلةَ وراثة النشاط من
+    المكتبة نفسِها، ويُسقط البناءَ إن احتاجت AppCompat ولم تنحدر سمتُنا
+    منها.
   -->
-  <style name="Theme.Zadim" parent="android:Theme.DeviceDefault.Light.NoActionBar" />
+  <style name="Theme.Zadim" parent="Theme.AppCompat.Light.NoActionBar" />
 
   <!--
     سمةُ الإقلاع: خلفيّتُها هي شاشةُ الإقلاع، فتُرسم **قبل** أن يُنشأ أيُّ

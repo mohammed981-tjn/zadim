@@ -91,6 +91,25 @@ android {
 
 dependencies {
   /*
+   * ── 🔴 مواءمةُ Kotlin — وسقط البناءُ بدونها ──────────────────────
+   *
+   * إعلانُ `appcompat:1.7.0` يجرّ `kotlin-stdlib:1.8.22`، و
+   * `androidbrowserhelper` يجرّ `kotlin-stdlib-jdk7/jdk8:1.6.21`.
+   * ومنذ Kotlin 1.8 **أُدمجت حزمتا jdk7/jdk8 في `kotlin-stdlib` نفسِها**
+   * وصارتا قشرتين فارغتين — فاجتماعُ الجديدة مع القديمتين يعني الصنفَ
+   * الواحدَ مرّتين، ويسقط `checkDebugDuplicateClasses` بعشرين صنفاً
+   * مكرَّراً.
+   *
+   * والقيدُ يرفع القشرتين إلى ١٫٨٫٢٢ فتصيران فارغتين تعتمدان على
+   * `kotlin-stdlib` وحدَها. **ولا يُثبَّت به شيء**: القيدُ حدٌّ أدنى،
+   * فترقّي المكتبات لاحقاً يرفعُهما معاً ولا يُجمّدهما هنا.
+   */
+  constraints {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"
+  }
+
+  /*
    * ── لماذا `androidbrowserhelper` ولا سطرَ WebView واحد ────────────
    *
    * الفرقُ ليس أسلوباً: **متجرُ Play يرفض غلافَ WebView** صراحةً
@@ -102,4 +121,14 @@ dependencies {
    * فهو نفسُ المتصفّح بلا شريطِ عنوان.
    */
   implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+
+  /*
+   * ⚠️ **AppCompat يُعلَن صراحةً وإن جاء بالوراثة.**
+   *
+   * `androidbrowserhelper` يجرّه معه، فالسطرُ لا يضيف حزمةً. لكنّ
+   * سمتَنا تنحدر من `Theme.AppCompat` (انظر `themes.xml` والعطبَ الذي
+   * وُلد منه)، **وتبعيّةٌ نعتمد عليها ولا نعلنها تنكسر يومَ ترقّي
+   * المكتبةُ ويتغيّر ما تجرّه** — وتنكسر وقتَ التشغيل لا وقتَ البناء.
+   */
+  implementation "androidx.appcompat:appcompat:1.7.0"
 }

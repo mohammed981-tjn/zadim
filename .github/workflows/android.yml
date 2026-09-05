@@ -150,6 +150,71 @@ jobs:
       # فيُسأل الآن `apksigner` نفسُه — وهو الذي يسأله أندرويد — وتُطبع
       # بصمةُ من وقّع. **ويسقط البناءُ إن لم تكن نسخةُ التشخيص موقَّعة**،
       # لأنها الوحيدةُ الموعودةُ بالتثبيت.
+      # 🔴 **حارسُ السمة — وُلد من انهيارٍ عند الفتح.**
+      #
+      # `LauncherActivity` في `androidbrowserhelper` تنحدر من
+      # `AppCompatActivity`، وهي ترمي عند الإنشاء إن لم تكن سمةُ النشاط
+      # من عائلة `Theme.AppCompat`. والأثرُ: التطبيقُ يُثبَّت ويُفتح
+      # **ويختفي** — بلا رسالةٍ ولا أثرٍ في الشاشة. وقد وقع فعلاً.
+      #
+      # ولا يُفحص بالحفظ: تُقرأ **سلسلةُ الوراثة من المكتبة نفسِها** في
+      # مخبأ Gradle. فإن ترقّت المكتبةُ يوماً وتغيّر أصلُها، يتغيّر حكمُ
+      # هذا الحارس معها بلا أن يعدّله أحد.
+      # 🔴 **حارسُ شاشة الإقلاع — وُلد من العطب الذي أخفى نفسَه ثلاثَ مرّات.**
+      #
+      # حين يُعلَن `SPLASH_IMAGE_DRAWABLE` تنسخ المكتبةُ الصورةَ إلى
+      # `files/twa_splash/` وتسلّمها إلى Chrome بـ`FileProvider`. وإن لم
+      # يكن المسارُ مُصرَّحاً في `filepaths.xml` رمى `FileProvider`
+      # استثناءً **عند الفتح قبل أن يُرسم إطار** — فيُثبَّت التطبيقُ
+      # ويُفتح ويختفي، بلا رسالةٍ ولا أثر.
+      #
+      # وقد وقع فعلاً، وأخفى نفسَه خلف تشخيصين خاطئين (السمة، ثمّ المتجه)
+      # لأن العَرَضَ واحدٌ في الحالات كلِّها. فيُفحص الاقترانُ نفسُه: من
+      # أعلن الصورةَ فليُعلن مسارَها.
+      - name: التحقّق من اقتران شاشة الإقلاع بمسارها
+        run: |
+          set -uo pipefail
+          MAN=app/src/main/AndroidManifest.xml
+          PATHS=app/src/main/res/xml/filepaths.xml
+          if grep -q "SPLASH_IMAGE_DRAWABLE" "$MAN"; then
+            if grep -q 'path="twa_splash/"' "$PATHS"; then
+              echo "✅ شاشةُ الإقلاع مُعلَنةٌ ومسارُها مُصرَّحٌ في FileProvider."
+            else
+              echo "⛔ SPLASH_IMAGE_DRAWABLE مُعلَنةٌ و«twa_splash/» غيرُ مصرَّحٍ في $PATHS."
+              echo "   الأثر: FileProvider يرمي عند الفتح — التطبيقُ يُثبَّت ثم يختفي."
+              exit 1
+            fi
+          else
+            echo "ℹ️ لا شاشةَ إقلاعٍ مُعلَنة — لا قيد."
+          fi
+
+      - name: التحقّق من عائلة السمة
+        run: |
+          set -uo pipefail
+          AAR=$(find ~/.gradle/caches -name "androidbrowserhelper-*.aar" | head -1)
+          if [ -z "$AAR" ]; then echo "::warning::لم يُعثر على AAR — تخطّي الفحص"; exit 0; fi
+          work="$RUNNER_TEMP/abh"; mkdir -p "$work"; unzip -o -q "$AAR" -d "$work"
+          SUPER=$(javap -classpath "$work/classes.jar" \
+            com.google.androidbrowserhelper.trusted.LauncherActivity 2>/dev/null \
+            | head -2 | tr -d '\n')
+          echo "سلسلةُ الوراثة: $SUPER"
+
+          PARENT=$(sed -n 's/.*<style name="Theme.Zadim" parent="\([^"]*\)".*/\1/p' \
+            app/src/main/res/values/themes.xml)
+          echo "سمتُنا تنحدر من: $PARENT"
+
+          if echo "$SUPER" | grep -q "AppCompatActivity"; then
+            if echo "$PARENT" | grep -q "AppCompat"; then
+              echo "✅ النشاطُ يحتاج AppCompat، وسمتُنا منها."
+            else
+              echo "⛔ النشاطُ ينحدر من AppCompatActivity وسمتُنا ليست من Theme.AppCompat."
+              echo "   الأثر: انهيارٌ فورَ الفتح — يُثبَّت ثم يختفي."
+              exit 1
+            fi
+          else
+            echo "ℹ️ النشاطُ لا يحتاج AppCompat — لا قيدَ على السمة."
+          fi
+
       - name: التحقّق من التوقيع
         run: |
           set -uo pipefail
@@ -170,6 +235,51 @@ jobs:
             fi
           done
           exit "$fail"
+
+      # 🔴 **الفحصُ الوحيدُ الذي كان ينقص: هل يفتح أصلاً؟**
+      #
+      # ثلاثةُ فحوصٍ قبله تسأل عن الحزمة — نطاقُها وتوقيعُها وسمتُها —
+      # **ولا واحدَ منها يشغّلها**. فخرجت حزمةٌ تُثبَّت ثمّ تنهار عند
+      # الفتح، وكلُّ الفحوصِ خضراء.
+      #
+      # وأسوأُ من ذلك: شخّصتُ السببَ بالسمة، **فنقضني الحارسُ نفسُه**
+      # (`LauncherActivity` تنحدر من `android.app.Activity` لا من
+      # `AppCompatActivity`). فالتخمينُ عن بُعدٍ لا يُغني عن التشغيل.
+      #
+      # فيُقلَع محاكٍ، ويُثبَّت التطبيقُ، **ويُفتح**، ويُسأل النظامُ:
+      # أما زالت عمليّتُه حيّةً بعد ثوانٍ؟ وإن ماتت طُبع سببُ الانهيار
+      # من `logcat` كاملاً — لا «فشل» مجرَّدة.
+      # ⚠️ **استشاريٌّ لا مانع** (`continue-on-error`) — بعد أربع تشغيلات.
+      #
+      # المحاكي على مُشغِّلات جيت هوب غيرُ مستقرّ: أقلع في ١٣ دقيقةً
+      # مرّتين، وتجاوز المهلةَ مرّةً، وانهار بعد الإقلاع مرّةً
+      # (`Broken pipe` في خدمة الإعدادات). فحمرتُه تقول «المحاكي سقط»
+      # أكثرَ ممّا تقول «التطبيقُ معطوب» — وبوّابةٌ تحمرُّ لسببٍ ليس
+      # سببَها تُدرَّب العينُ على تجاهلها، فتضيع حين تصدق.
+      #
+      # فيبقى قيمتُه في **ما يطبعه**: إن فُتح التطبيقُ ومات، طُبع
+      # `logcat` كاملاً وهو ما لا يُعوَّض. والحكمُ النهائيُّ لجهازٍ
+      # حقيقيّ — وهو الذي كشف العطبَ أصلاً.
+      - name: تشغيلٌ حقيقيٌّ على محاكٍ (استشاريّ)
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          # ⚠️ **٣٠ لا ٣٤، ومهلةٌ نصفُ ساعة.** أقلع المحاكي في ١٣ دقيقةً
+          # مرّتين ثمّ تجاوز المهلةَ في الثالثة — فمهلةُ الأداة الافتراضية
+          # أضيقُ من واقع مُشغِّلات جيت هوب. وصورةُ ٣٠ أخفُّ إقلاعاً،
+          # و`google_apis` تبقى لأنها تحمل Chrome — وبلا Chrome يسقط
+          # التطبيقُ إلى WebView فلا نفحص المسارَ الحقيقيّ.
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          emulator-boot-timeout: 1800
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -camera-back none
+          # الخطوةُ التي انهارت بـBroken pipe — وهي زينةٌ لا يحتاجها فحصُ إقلاع.
+          disable-animations: false
+          working-directory: apps/android
+          # ⚠️ **الأداةُ تشغّل كلَّ سطرٍ وحدَه بـ`sh -c`** — لا كسكربتٍ
+          # واحد، ولا تقول ذلك. فالمنطقُ في ملفٍّ يُنادى بسطر.
+          script: bash scripts/smoke.sh
 
       - name: رفعُ المخرجات
         uses: actions/upload-artifact@v4
