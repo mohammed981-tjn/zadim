@@ -1,0 +1,49 @@
+# مِجَسٌّ على نشرةِ الإنتاج — لأن التشخيصَ من الداخل عمياء.
+#
+# ── لماذا وُجد هذا الملفّ ─────────────────────────────────────────
+#
+# ردّ `zadim-gk29.vercel.app` أربعمئةً وأربعاً على كل مسار، وضاع
+# تشخيصان لأنهما بُنيا على **استنتاجٍ من مخرَج البناء** لا على ردّ
+# الخادم نفسِه. وبيئةُ التطوير هنا محجوبةُ الخروج (`403` من الوكيل
+# على كل نطاق)، فلا سبيلَ لقياس الرأسيّات إلا من داخل Actions.
+#
+# ── وما الذي يفصل حقاً ───────────────────────────────────────────
+#
+# رأسُ `x-vercel-error` وحدَه يفرّق بين حالتين تبدوان واحدةً في
+# المتصفّح:
+#   • `DEPLOYMENT_NOT_FOUND` ⇒ النطاقُ لا يشير إلى نشرةٍ أصلاً
+#     (مشروعٌ حُذف أو أُعيدت تسميته، أو نطاقٌ نُزع) — والعلاجُ في لوحة
+#     Vercel لا في الكود.
+#   • `NOT_FOUND` بلا رأسِ خطأ ⇒ النشرةُ قائمةٌ والتوجيهُ لم يطابق —
+#     والعلاجُ في المستودع.
+#
+# ولا يُدمج هذا في main: يُشغَّل على الفرع، ويُطبع، ويكفي.
+name: مِجَسُّ الإنتاج
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/probe-prod.yml']
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: قياسُ الرأسيّات على كل مسار
+        run: |
+          for path in / /ar /en /manifest.webmanifest /.well-known/assetlinks.json; do
+            echo "══════════ https://zadim-gk29.vercel.app${path}"
+            curl -sS -I --max-time 30 "https://zadim-gk29.vercel.app${path}" \
+              | grep -iE '^(HTTP/|server|x-vercel-|location|content-type|age|cache-control)' \
+              || echo "  (تعذّر الاتصال)"
+          done
+      - name: جسدُ الردّ على الجذر — نصُّ الخطأ كما يراه المتصفّح
+        run: |
+          curl -sS --max-time 30 https://zadim-gk29.vercel.app/ | head -c 1200
+          echo
+      - name: هل يُخدَم أصلٌ ساكنٌ — فرقٌ بين «لا نشرة» و«لا توجيه»
+        run: |
+          curl -sS -o /dev/null -w 'favicon: %{http_code}\n' --max-time 30 \
+            https://zadim-gk29.vercel.app/favicon.ico || true
+          curl -sS -o /dev/null -w 'icons/icon-192: %{http_code}\n' --max-time 30 \
+            https://zadim-gk29.vercel.app/icons/icon-192.png || true
