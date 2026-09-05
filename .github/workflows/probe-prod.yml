@@ -1,4 +1,4 @@
-# مِجَسٌّ على نشرةِ الإنتاج — لأن التشخيصَ من الداخل عمياء.
+# مِجَسٌّ على النشرات — لأن التشخيصَ من الداخل أعمى.
 #
 # ── لماذا وُجد هذا الملفّ ─────────────────────────────────────────
 #
@@ -9,15 +9,15 @@
 #
 # ── وما الذي يفصل حقاً ───────────────────────────────────────────
 #
-# رأسُ `x-vercel-error` وحدَه يفرّق بين حالتين تبدوان واحدةً في
-# المتصفّح:
-#   • `DEPLOYMENT_NOT_FOUND` ⇒ النطاقُ لا يشير إلى نشرةٍ أصلاً
-#     (مشروعٌ حُذف أو أُعيدت تسميته، أو نطاقٌ نُزع) — والعلاجُ في لوحة
-#     Vercel لا في الكود.
-#   • `NOT_FOUND` بلا رأسِ خطأ ⇒ النشرةُ قائمةٌ والتوجيهُ لم يطابق —
-#     والعلاجُ في المستودع.
+# القياسُ الأوّل أثبت أن ملفّات `public/` تُخدَم بمئتين وأن كلَّ ما
+# يولّده Next في مخرَج البناء يردّ أربعمئةً وأربعاً. فالفصلُ ليس بين
+# «تعمل» و«لا تعمل» بل بين **مصدرَي الملفّ**، ولذلك يقيس المِجَسُّ
+# الصنفين معاً على كل هدف:
+#   • `sw.js` · `offline.html` · `icons/*`  ⇐ `public/`
+#   • `icon.svg` · `apple-icon.png` · `/ar` ⇐ مخرَجُ بناء Next
 #
-# ولا يُدمج هذا في main: يُشغَّل على الفرع، ويُطبع، ويكفي.
+# وتُقاس المعاينةُ مع الإنتاج معاً: المعاينةُ تحمل إصلاحَ الفرع
+# والإنتاجُ لا يحمله، فالفرقُ بينهما هو الحكمُ على الإصلاح قبل الدمج.
 name: مِجَسُّ الإنتاج
 
 on:
@@ -28,23 +28,26 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: الإنتاج
+            host: zadim-gk29.vercel.app
+          - label: معاينةُ الفرع
+            host: zadim-gk29-git-claude-zadim-re-c16780-mohammed981-tjns-projects.vercel.app
+    name: ${{ matrix.label }}
     steps:
       - name: قياسُ الرأسيّات على كل مسار
         run: |
           for path in / /ar /en /manifest.webmanifest /.well-known/assetlinks.json \
                       /sw.js /offline.html /icons/icon-512.png /icon.svg /apple-icon.png; do
-            echo "══════════ https://zadim-gk29.vercel.app${path}"
-            curl -sS -I --max-time 30 "https://zadim-gk29.vercel.app${path}" \
-              | grep -iE '^(HTTP/|server|x-vercel-|location|content-type|age|cache-control)' \
-              || echo "  (تعذّر الاتصال)"
+            printf '%-34s ' "$path"
+            curl -sS -o /dev/null --max-time 30 \
+              -w '%{http_code}  ct=%{content_type}\n' \
+              "https://${{ matrix.host }}${path}" || echo "(تعذّر الاتصال)"
           done
-      - name: جسدُ الردّ على الجذر — نصُّ الخطأ كما يراه المتصفّح
+      - name: رأسُ الخطأ على الجذر — يفرّق «لا نشرة» عن «لا توجيه»
         run: |
-          curl -sS --max-time 30 https://zadim-gk29.vercel.app/ | head -c 1200
-          echo
-      - name: هل يُخدَم أصلٌ ساكنٌ — فرقٌ بين «لا نشرة» و«لا توجيه»
-        run: |
-          curl -sS -o /dev/null -w 'favicon: %{http_code}\n' --max-time 30 \
-            https://zadim-gk29.vercel.app/favicon.ico || true
-          curl -sS -o /dev/null -w 'icons/icon-192: %{http_code}\n' --max-time 30 \
-            https://zadim-gk29.vercel.app/icons/icon-192.png || true
+          curl -sS -I --max-time 30 "https://${{ matrix.host }}/" \
+            | grep -iE '^(HTTP/|x-vercel-|server)' || true
