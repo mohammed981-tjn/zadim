@@ -3,6 +3,5 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "outputDirectory": ".next",
-  "ignoreCommand": "exit 1",
-  "regions": ["zz1"]
+  "ignoreCommand": "exit 1"
 }
