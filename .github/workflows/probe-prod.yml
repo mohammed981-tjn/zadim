@@ -31,7 +31,8 @@ jobs:
     steps:
       - name: قياسُ الرأسيّات على كل مسار
         run: |
-          for path in / /ar /en /manifest.webmanifest /.well-known/assetlinks.json; do
+          for path in / /ar /en /manifest.webmanifest /.well-known/assetlinks.json \
+                      /sw.js /offline.html /icons/icon-512.png /icon.svg /apple-icon.png; do
             echo "══════════ https://zadim-gk29.vercel.app${path}"
             curl -sS -I --max-time 30 "https://zadim-gk29.vercel.app${path}" \
               | grep -iE '^(HTTP/|server|x-vercel-|location|content-type|age|cache-control)' \
