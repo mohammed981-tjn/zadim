@@ -1,0 +1,53 @@
+# مِجَسٌّ على النشرات — لأن التشخيصَ من الداخل أعمى.
+#
+# ── لماذا وُجد هذا الملفّ ─────────────────────────────────────────
+#
+# ردّ `zadim-gk29.vercel.app` أربعمئةً وأربعاً على كل مسار، وضاع
+# تشخيصان لأنهما بُنيا على **استنتاجٍ من مخرَج البناء** لا على ردّ
+# الخادم نفسِه. وبيئةُ التطوير هنا محجوبةُ الخروج (`403` من الوكيل
+# على كل نطاق)، فلا سبيلَ لقياس الرأسيّات إلا من داخل Actions.
+#
+# ── وما الذي يفصل حقاً ───────────────────────────────────────────
+#
+# القياسُ الأوّل أثبت أن ملفّات `public/` تُخدَم بمئتين وأن كلَّ ما
+# يولّده Next في مخرَج البناء يردّ أربعمئةً وأربعاً. فالفصلُ ليس بين
+# «تعمل» و«لا تعمل» بل بين **مصدرَي الملفّ**، ولذلك يقيس المِجَسُّ
+# الصنفين معاً على كل هدف:
+#   • `sw.js` · `offline.html` · `icons/*`  ⇐ `public/`
+#   • `icon.svg` · `apple-icon.png` · `/ar` ⇐ مخرَجُ بناء Next
+#
+# وتُقاس المعاينةُ مع الإنتاج معاً: المعاينةُ تحمل إصلاحَ الفرع
+# والإنتاجُ لا يحمله، فالفرقُ بينهما هو الحكمُ على الإصلاح قبل الدمج.
+name: مِجَسُّ الإنتاج
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/probe-prod.yml']
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: الإنتاج
+            host: zadim-gk29.vercel.app
+          - label: معاينةُ الفرع
+            host: zadim-gk29-git-claude-zadim-re-c16780-mohammed981-tjns-projects.vercel.app
+    name: ${{ matrix.label }}
+    steps:
+      - name: قياسُ الرأسيّات على كل مسار
+        run: |
+          for path in / /ar /en /manifest.webmanifest /.well-known/assetlinks.json \
+                      /sw.js /offline.html /icons/icon-512.png /icon.svg /apple-icon.png; do
+            printf '%-34s ' "$path"
+            curl -sS -o /dev/null --max-time 30 \
+              -w '%{http_code}  ct=%{content_type}\n' \
+              "https://${{ matrix.host }}${path}" || echo "(تعذّر الاتصال)"
+          done
+      - name: رأسُ الخطأ على الجذر — يفرّق «لا نشرة» عن «لا توجيه»
+        run: |
+          curl -sS -I --max-time 30 "https://${{ matrix.host }}/" \
+            | grep -iE '^(HTTP/|x-vercel-|server)' || true
