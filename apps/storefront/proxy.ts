@@ -54,6 +54,6 @@ export const config = {
    * صريحٌ ومشروحٌ لئلا يُختصر في تنظيفٍ لاحق.
    */
   matcher: [
-    "/((?!_next|\\.well-known|manifest\\.webmanifest|sw\\.js|offline\\.html|favicon|icon|apple-icon|.*\\.(?:svg|png|jpg|jpeg|webp|ico|txt|xml|json|js|webmanifest|html)).*)",
+    "/((?!_next|api|\\.well-known|manifest\\.webmanifest|sw\\.js|offline\\.html|favicon|icon|apple-icon|.*\\.(?:svg|png|jpg|jpeg|webp|ico|txt|xml|json|js|webmanifest|html)).*)",
   ],
 }
