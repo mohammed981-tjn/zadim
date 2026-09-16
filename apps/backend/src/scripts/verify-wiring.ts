@@ -34,8 +34,16 @@ import { COD_PROVIDER_ID } from "../modules/checkout/orchestrate";
  * التشغيل: npx medusa exec ./src/scripts/verify-wiring.ts
  */
 
-/** ما لا يُحتسب مُنادياً: البوّاباتُ والاستقصاءاتُ والبذور. */
-const NOT_PRODUCTION = ["/scripts/", "/node_modules/", "/.medusa/", "/migrations/"];
+/**
+ * ما لا يُحتسب مُنادياً: البوّاباتُ والاستقصاءاتُ والبذور.
+ *
+ * ⚠️ **واختباراتُ الوحدة منها** — وهي اليوم في `test/` خارجَ `src/`
+ * فلا يمسحها هذا الفاحصُ أصلاً. والإضافةُ حزامٌ ثانٍ: ملفُّ اختبارٍ
+ * يُكتب يوماً داخلَ `src/` يجعل الفاحصَ **يحتسب الاختبارَ مُنادياً**،
+ * فتمرّ قدرةٌ لا يناديها إنتاجٌ وهي خضراء — وهو بعينه الوهمُ الذي
+ * وُلد منه هذا الفاحص.
+ */
+const NOT_PRODUCTION = ["/scripts/", "/node_modules/", "/.medusa/", "/migrations/", ".test.ts"];
 
 const SRC = join(process.cwd(), "src");
 
