@@ -21,7 +21,27 @@ import { flashState } from "../modules/promotions/flash";
  * تُعاد التجربةُ بحارسٍ **بلا `for update`** ويُتأكَّد أنه **يبيع أكثرَ
  * من السقف**. فبلا هذا النقض تمرّ البوّابةُ خضراءَ على حارسٍ لا يقفل —
  * وهي نفسُ الخضرةِ التي سمحت بـ٩٤ بيعاً من عشرة قبل حارس المخزون.
- * (قِيس هنا: ٤١ من ١٠ بلا قفل.)
+ *
+ * ── 🔴 ونقضٌ يتبع سرعةَ الآلة ليس نقضاً ─────────────────────────
+ *
+ * سقطت هذه البوّابةُ في CI **على نقضها هي**: الحارسُ بلا قفلٍ باع عشرةً
+ * بالضبط، فلم يُثبت النقضُ شيئاً. والسببُ أن فتحَ مئةِ اتصالٍ يُشعِل
+ * مئةَ عمليةِ خادمٍ في Postgres، وعلى عدّادَين ذلك **يُسلسل البدايات**:
+ * كلُّ إدخالٍ يبدأ بعد أن التزم سابقُه، فلا تزاحمَ أصلاً. ومحلّياً
+ * تزاحمت فباعت ١٦ — **فكان الأخضرُ والأحمرُ يقيسان الآلةَ لا الحارس**.
+ *
+ * فصار النقضُ مقيساً لا مصادَفاً بأمرين:
+ *
+ * ١. **تُفتح الاتصالاتُ كلُّها أوّلاً** ثم تُطلَق الإدخالاتُ دفعةً
+ *    واحدة — فيصير التفاوتُ في البدايات أجزاءَ مِلّي ثانية.
+ * ٢. **نافذةُ الفحص→الالتزام تُوسَّع** بـ`pg_sleep` بعد الفحوص وقبل
+ *    `return new` — فالنافذةُ التي كانت تُصادَف صارت تُقاس.
+ *
+ * ── والشاهدُ المضادُّ هو الذي يجعل هذا نقضاً لا حيلة ─────────────
+ *
+ * لأن قائلاً يقول: «النافذةُ هي التي باعت، لا غيابُ القفل». فتُعاد
+ * التجربةُ **بنفس النافذة ومع القفل** ⇒ عشرةٌ بالضبط. فالنافذةُ واحدةٌ
+ * والفرقُ سطرٌ واحد: `for update`.
  *
  * التشغيل: npx medusa exec ./src/scripts/verify-flash.ts
  */
@@ -29,26 +49,18 @@ import { flashState } from "../modules/promotions/flash";
 const STOCK = 10;
 const ATTEMPTS = 100;
 
-/** حارسٌ بلا قفل — للنقض وحدَه، ويُعاد الأصليُّ بعده. */
-const GUARD_NO_LOCK = `
-create or replace function "zadim_guard_flash_claim"() returns trigger language plpgsql as $$
-declare v_sale record; v_claimed integer;
-begin
-  if new."quantity" < 0 then return new; end if;
-  select * into v_sale from "zadim_flash_sale"
-    where "id" = new."flash_sale_id" and "deleted_at" is null;
-  if v_sale is null then
-    raise exception 'zadim: FLASH_NOT_FOUND' using errcode = 'check_violation';
-  end if;
-  if v_sale."quantity_limit" is not null then
-    select coalesce(sum("quantity"), 0) into v_claimed from "zadim_flash_sale_claim"
-      where "flash_sale_id" = new."flash_sale_id" and "id" <> new."id";
-    if v_claimed + new."quantity" > v_sale."quantity_limit" then
-      raise exception 'zadim: FLASH_SOLD_OUT' using errcode = 'check_violation';
-    end if;
-  end if;
-  return new;
-end; $$;`;
+/**
+ * نافذةُ الفحص→الالتزام، موسَّعةً للنقض وحدَه (بالثواني).
+ *
+ * ١٥٠ مِلّي ثانيةً أكبرُ بمراتبَ من تفاوت بدايات الإدخالات بعد فتح
+ * الاتصالات (أجزاءُ مِلّي)، وأصغرُ من أن تُطيل البوّابة: مع القفل
+ * ينام الناجحون وحدَهم — عشرةٌ × ١٥٠م ≈ ثانيةٌ ونصف — لأن الرفضَ
+ * يقع **قبل** النوم.
+ */
+const WINDOW_S = 0.15;
+
+/** أقلُّ ما يُقبل من اتصالاتٍ متزامنة: دونه يُقاس سقفُ القاعدة لا الحارس. */
+const MIN_JOINED = 60;
 
 export default async function verifyFlash({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
@@ -66,10 +78,41 @@ export default async function verifyFlash({ container }: ExecArgs) {
   const tag = `vflash-${Date.now()}`;
   const made: string[] = [];
 
-  /** نصُّ الحارس الأصليّ كما هو في الهجرة — يُقرأ من القاعدة لا يُنسخ. */
+  /**
+   * نصُّ الحارس الأصليّ كما هو في الهجرة — **يُقرأ من القاعدة لا يُنسخ**.
+   *
+   * ونسخةٌ يدويّةٌ هنا تتقادم بصمت: تُعدَّل الهجرةُ فيبقى النقضُ ينقض
+   * حارساً لم يعُد موجوداً، ويمرّ أخضرَ على العطب.
+   */
   const originalGuard = (
     await pg.raw(`select prosrc from pg_proc where proname = 'zadim_guard_flash_claim'`)
   )?.rows?.[0]?.prosrc as string;
+  if (!originalGuard) {
+    throw new Error("zadim: لا حارسَ في القاعدة — الهجرةُ لم تُطبَّق، والنقضُ بلا أصلٍ يُعاد إليه.");
+  }
+
+  const install = (body: string) =>
+    pg.raw(
+      `create or replace function "zadim_guard_flash_claim"()
+         returns trigger language plpgsql as $ZADIM$${body}$ZADIM$;`
+    );
+
+  /** نزعُ القفل — والتأكّدُ أنه كان هناك، فنقضٌ لم يُطبَّق أسوأُ من غيابه. */
+  const withoutLock = (src: string) => {
+    if (!/\bfor update\b/.test(src)) {
+      throw new Error("zadim: النقضُ لم يُطبَّق — لا «for update» في نصّ الحارس.");
+    }
+    return src.replace(/\bfor update\b/, "");
+  };
+
+  /** توسيعُ النافذة: بعد الفحوص كلِّها وقبل `return new` الأخيرة. */
+  const withWindow = (src: string) => {
+    const at = src.lastIndexOf("return new;");
+    if (at < 0) {
+      throw new Error("zadim: النقضُ لم يُطبَّق — لا «return new;» أخيرةٌ في نصّ الحارس.");
+    }
+    return `${src.slice(0, at)}perform pg_sleep(${WINDOW_S});\n        ${src.slice(at)}`;
+  };
 
   const newSale = async (
     id: string,
@@ -124,26 +167,54 @@ export default async function verifyFlash({ container }: ExecArgs) {
     }
   };
 
-  /** مئةُ اتصالٍ حقيقيّ — لا مجمَّعٌ يُسلسلها فيُخفي التزاحم. */
-  const storm = async (saleId: string): Promise<number> => {
-    const results = await Promise.allSettled(
-      Array.from({ length: ATTEMPTS }, async (_, i) => {
+  /**
+   * مئةُ اتصالٍ حقيقيّ — **تُفتح كلُّها ثم تُطلَق دفعةً واحدة**.
+   *
+   * ولا مجمَّعٌ: المجمَّعُ يُسلسل المعاملاتِ على اتصالاتٍ معدودة فيبدو
+   * الحارسُ ناجحاً وهو لم يُختبَر. ولا فتحٌ مع الإطلاق: فتحُ الاتصال
+   * يُشعِل عمليةَ خادمٍ في Postgres، وعلى عدّادَين تُسلسَل البدايات
+   * فيلتزم السابقُ قبل أن يبدأ اللاحق — وذاك بعينه ما أسقط هذه
+   * البوّابةَ على نقضها في CI.
+   *
+   * ويُعاد `joined` لأن سقفَ اتصالات القاعدة يُنقص المشاركين، ويجب أن
+   * يُقال بصوتٍ عالٍ لا أن يُحسب رفضاً من الحارس.
+   */
+  const storm = async (saleId: string): Promise<{ ok: number; joined: number }> => {
+    const clients = await Promise.all(
+      Array.from({ length: ATTEMPTS }, async () => {
         const c = new Client({ connectionString: conn });
-        await c.connect();
         try {
+          await c.connect();
           await c.query(`set search_path to "${schema}"`);
-          await c.query(
-            `insert into "zadim_flash_sale_claim"
-               ("id","flash_sale_id","customer_key","cart_id","quantity")
-             values ($1, $2, $3, $4, 1)`,
-            [`${saleId}-s${i}`, saleId, `cust${i}`, `${saleId}-cart${i}`]
-          );
-        } finally {
-          await c.end();
+          return c;
+        } catch {
+          try {
+            await c.end();
+          } catch {
+            /* اتصالٌ لم يُفتح لا يُغلق */
+          }
+          return null;
         }
       })
     );
-    return results.filter((r) => r.status === "fulfilled").length;
+    const joined = clients.filter((c) => c !== null).length;
+
+    // 🔴 كلُّ الاستعلامات تُطلَق في نفس الدورة — لا `await` بينها.
+    const results = await Promise.allSettled(
+      clients.map((c, i) =>
+        c
+          ? c.query(
+              `insert into "zadim_flash_sale_claim"
+                 ("id","flash_sale_id","customer_key","cart_id","quantity")
+               values ($1, $2, $3, $4, 1)`,
+              [`${saleId}-s${i}`, saleId, `cust${i}`, `${saleId}-cart${i}`]
+            )
+          : Promise.reject(new Error("no-connection"))
+      )
+    );
+
+    await Promise.allSettled(clients.map((c) => c?.end()));
+    return { ok: results.filter((r) => r.status === "fulfilled").length, joined };
   };
 
   const netOf = async (saleId: string): Promise<number> => {
@@ -159,23 +230,31 @@ export default async function verifyFlash({ container }: ExecArgs) {
     // ── ١) البوّابة: مئةٌ متزامنةٌ على عشر ────────────────────────
     logger.info(`== البوّابة: ${ATTEMPTS} محاولةً متزامنةً على ${STOCK} قطع ==`);
     const gate = await newSale("gate", { quantity_limit: STOCK });
-    const okGate = await storm(gate);
+    const { ok: okGate, joined } = await storm(gate);
     const netGate = await netOf(gate);
 
-    logger.info(`     نجحت ${okGate} · رُفضت ${ATTEMPTS - okGate} · المجموعُ الصافي ${netGate}`);
+    logger.info(
+      `     شارك ${joined} اتصالاً من ${ATTEMPTS} · نجحت ${okGate} · ` +
+        `رُفضت ${joined - okGate} · المجموعُ الصافي ${netGate}`
+    );
+    joined >= MIN_JOINED
+      ? pass(`${joined} اتصالاً حقيقيّاً تزاحمت دفعةً واحدة`)
+      : fail(
+          `لم يتّصل إلا ${joined} من ${ATTEMPTS} — سقفُ اتصالات القاعدة يخنق القياس، ` +
+            `فما يُقاس هنا ليس الحارس.`
+        );
     okGate === STOCK
-      ? pass(`نجح ${STOCK} بالضبط ورُفض ${ATTEMPTS - STOCK}`)
+      ? pass(`نجح ${STOCK} بالضبط ورُفض ${joined - STOCK}`)
       : fail(`نجح ${okGate} والمتوقّع ${STOCK} — بيعٌ زائدٌ في العرض`);
     netGate === STOCK
       ? pass(`الدفترُ يقول ${STOCK} — الحقيقةُ في الصفوف لا في عدّاد`)
       : fail(`الدفترُ يقول ${netGate} والمتوقّع ${STOCK}`);
 
-    // ── ٢) 🔴 نقضُ القفل: بلا `for update` يجب أن يُباع أكثر ──────
-    logger.info("== النقض: الحارسُ نفسُه بلا قفل ==");
-    await pg.raw(GUARD_NO_LOCK);
+    // ── ٢) 🔴 نقضُ القفل: بلا `for update` وبنافذةٍ موسَّعة ───────
+    logger.info(`== النقض: نفسُ الحارس بلا قفل، والنافذةُ ${WINDOW_S * 1000}م ==`);
+    await install(withWindow(withoutLock(originalGuard)));
     const loose = await newSale("nolock", { quantity_limit: STOCK });
-    const okLoose = await storm(loose);
-    await pg.raw(originalGuard ? `create or replace function "zadim_guard_flash_claim"() returns trigger language plpgsql as $$${originalGuard}$$;` : GUARD_NO_LOCK);
+    const okLoose = (await storm(loose)).ok;
 
     logger.info(`     بلا قفل: نجحت ${okLoose} على سقف ${STOCK}`);
     okLoose > STOCK
@@ -185,11 +264,26 @@ export default async function verifyFlash({ container }: ExecArgs) {
             `فإمّا أن التزاحمَ لم يقع (اتصالاتٌ مُسلسَلة) أو أن الفحصَ يقيس غيرَ ما يظنّ.`
         );
 
-    // وقد أُعيد الحارسُ الأصليّ: يُتأكَّد بقياسٍ ثانٍ لا بالثقة.
+    // ── ٢ب) الشاهدُ المضادّ: **نفسُ النافذة مع القفل** ⇒ عشرةٌ ────
+    //
+    // وبدونه يبقى الاعتراضُ قائماً: «النافذةُ هي التي باعت لا غيابُ
+    // القفل». والفرقُ بين التجربتين سطرٌ واحد.
+    logger.info("== الشاهدُ المضادّ: نفسُ النافذة ومعها القفل ==");
+    await install(withWindow(originalGuard));
+    const ctl = await newSale("ctl", { quantity_limit: STOCK });
+    const okCtl = (await storm(ctl)).ok;
+
+    logger.info(`     بالقفل وبنفس النافذة: نجحت ${okCtl}`);
+    okCtl === STOCK
+      ? pass(`النافذةُ نفسُها ومع القفل ${STOCK} بالضبط — فالفرقُ «for update» لا السرعة`)
+      : fail(`بالقفل وبنفس النافذة نجحت ${okCtl} والمتوقّع ${STOCK}`);
+
+    // وقد أُعيد الحارسُ الأصليّ: يُتأكَّد بقياسٍ ثالثٍ لا بالثقة.
+    await install(originalGuard);
     const back = await newSale("back", { quantity_limit: STOCK });
-    const okBack = await storm(back);
+    const okBack = (await storm(back)).ok;
     okBack === STOCK
-      ? pass(`وبعودة القفل: ${STOCK} بالضبط`)
+      ? pass(`وبعودة الحارس الأصليّ: ${STOCK} بالضبط`)
       : fail(`الحارسُ لم يعُد كما كان: ${okBack} من ${STOCK}`);
 
     // ── ٣) النافذةُ والإطفاء ─────────────────────────────────────
@@ -292,6 +386,11 @@ export default async function verifyFlash({ container }: ExecArgs) {
       ? pass("أربعُ حالاتٍ، والنهايةُ حصريّةٌ كما يفحصها المُطلِق")
       : fail("حالةُ العرض لا تطابق ما يفحصه المُطلِق");
   } finally {
+    // 🔴 الحارسُ يُعاد هنا لا بعد النقض: لو سقط ما بين النقض وإعادته
+    // لبقيت القاعدةُ بحارسٍ بلا قفل — بوّابةٌ حمراءُ تترك خلفها عطباً
+    // أسوأَ مما جاءت تكشف.
+    await install(originalGuard);
+
     // تنظيفٌ كامل: الدفترُ محميٌّ بقاعدة، فتُعطَّل للحذف ثم تُعاد.
     await pg.raw(`alter table "zadim_flash_sale_claim" disable rule "zadim_flash_sale_claim_no_delete"`);
     await pg.raw(`delete from "zadim_flash_sale_claim" where "flash_sale_id" like ?`, [`%${tag}`]);
