@@ -223,6 +223,179 @@ const ctx = await browser.newContext({
  * الصفحة، فمتجرٌ بلا رابطِ تخطٍّ يمرّ أخضرَ بينما يدفع كلُّ من لا يملك
  * فأرةً **خمسَ ضغطاتٍ في كل صفحة** قبل أوّل منتج. فبعده مشيٌ حقيقيّ.
  */
+/**
+ * 🔴 طبقةُ التطبيق — شريطُ التبويب وشاشةُ الدخول.
+ *
+ * ── ولماذا بوّابةٌ لها أصلاً ────────────────────────────────────
+ *
+ * لأن ما يجعل الصفحةَ «تبدو تطبيقاً» كلُّه **قابلٌ للكسر بصمت**:
+ * قاعدةُ `:has()` تُحذف فتظهر الترويسةُ فوق شاشة الدخول، و`pb-16`
+ * تُنسى فيختفي زرُّ «أتمم الطلب» خلف الشريط، و`md:hidden` تُقلب
+ * فيأكل الشريطُ أسفلَ سطح المكتب. ولا يسقط بناءٌ ولا اختبارُ وحدةٍ
+ * على واحدةٍ منها — لأنها كلُّها **هندسةُ عرضٍ تُقاس في متصفّح**.
+ */
+async function appShellChecks(ctx) {
+  console.log("\n== 📱 طبقةُ التطبيق: شريطُ التبويب ==");
+
+  // الوجهاتُ الأربعُ وأيُّها يُضيء في كلّ صفحة — والتبويبُ الذي لا
+  // يُضيء في نصف رحلة الشراء يبدو معطوباً.
+  const TAB_EXPECT = [
+    ["", 0],
+    ["/cart", 2],
+    ["/p/zadim-headphones", 1],
+  ];
+
+  for (const loc of LOCALES)
+    for (const [suffix, activeIndex] of TAB_EXPECT) {
+      const path = `/${loc.code}${suffix}`;
+      const page = await ctx.newPage();
+      try {
+        await page.goto(BASE + path, { waitUntil: "networkidle", timeout: 45000 });
+        const r = await page.evaluate(() => {
+          const nav = document.querySelector("[data-app-tabs]");
+          if (!nav) return null;
+          const links = [...nav.querySelectorAll("a")];
+          const main = document.getElementById("main");
+          const box = nav.getBoundingClientRect();
+          return {
+            count: links.length,
+            activeAt: links.findIndex((a) => a.getAttribute("aria-current") === "page"),
+            activeCount: links.filter((a) => a.getAttribute("aria-current") === "page").length,
+            height: Math.round(box.height),
+            atBottom: Math.abs(box.bottom - window.innerHeight) <= 1,
+            mainPad: parseFloat(getComputedStyle(main).paddingBottom || "0"),
+          };
+        });
+
+        if (!r) {
+          fail(`${path}: لا شريطَ تبويبٍ أصلاً — الطبقةُ غيرُ مركَّبة`);
+          await page.close();
+          continue;
+        }
+
+        r.count === 4 && r.atBottom && r.height > 0
+          ? pass(`${path}: أربعةُ تبويباتٍ ظاهرةٌ في أسفل الشاشة (${r.height}px)`)
+          : fail(`${path}: التبويبات ${r.count} · أسفلَ الشاشة=${r.atBottom} · ارتفاع=${r.height}`);
+
+        // 🔴 **واحدٌ نشطٌ بالضبط**: صفرٌ يعني أن الزائرَ لا يعرف أين هو،
+        // واثنان يعني أن `active` تُطابق أكثرَ مما ينبغي.
+        r.activeCount === 1 && r.activeAt === activeIndex
+          ? pass(`   والنشطُ واحدٌ وهو الصحيح (#${r.activeAt})`)
+          : fail(
+              `   النشطُ ${r.activeCount} عند #${r.activeAt} والمتوقّع واحدٌ عند #${activeIndex}`
+            );
+
+        // والمساحةُ تحت المحتوى ≥ ارتفاع الشريط، وإلا اختفى آخرُ سطر.
+        r.mainPad >= r.height
+          ? pass(`   ولا يختفي محتوى خلفه (مساحة ${r.mainPad}px ≥ ${r.height}px)`)
+          : fail(`   المحتوى يقع خلف الشريط: مساحة ${r.mainPad}px وارتفاعه ${r.height}px`);
+      } catch (e) {
+        fail(`${path}: تعذّر فحصُ الشريط (${String(e.message).slice(0, 80)})`);
+      }
+      await page.close();
+    }
+
+  // وعلى سطح المكتب لا يظهر: الترويسةُ تكفي، ولا فأرةَ تشتكي من بُعدِ الأعلى.
+  const wide = await ctx.browser().newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const p = await wide.newPage();
+    await p.goto(`${BASE}/ar`, { waitUntil: "networkidle", timeout: 45000 });
+    const visible = await p.evaluate(() => {
+      const nav = document.querySelector("[data-app-tabs]");
+      return nav ? nav.getBoundingClientRect().height > 0 : false;
+    });
+    !visible
+      ? pass("وعلى سطح المكتب لا يظهر الشريط — الترويسةُ تكفي")
+      : fail("الشريطُ السفليُّ يظهر على سطح المكتب ويأكل ارتفاعاً بلا فائدة");
+  } catch (e) {
+    fail(`تعذّر فحصُ سطح المكتب (${String(e.message).slice(0, 80)})`);
+  }
+  await wide.close();
+
+  // ── شاشةُ الدخول ────────────────────────────────────────────────
+  console.log("\n== 🔐 شاشةُ الدخول — شاشةٌ لا صفحة ==");
+
+  for (const loc of LOCALES) {
+    const page = await ctx.newPage();
+    try {
+      await page.goto(`${BASE}/${loc.code}/account/login`, {
+        waitUntil: "networkidle",
+        timeout: 45000,
+      });
+
+      const r = await page.evaluate(() => {
+        const vis = (el) => Boolean(el) && el.getBoundingClientRect().height > 0;
+        const field = (sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          return {
+            h: Math.round(el.getBoundingClientRect().height),
+            fs: parseFloat(getComputedStyle(el).fontSize),
+          };
+        };
+        const submit = document.querySelector('button[type="submit"]');
+        return {
+          chrome: {
+            header: vis(document.querySelector("header")),
+            footer: vis(document.querySelector("footer")),
+            tabs: vis(document.querySelector("[data-app-tabs]")),
+          },
+          h1: document.querySelectorAll("h1").length,
+          email: field('input[type="email"]'),
+          password: field('input[autocomplete="current-password"]'),
+          submitH: submit ? Math.round(submit.getBoundingClientRect().height) : 0,
+          eye: Boolean(document.querySelector("button[aria-pressed]")),
+          guest: Boolean(document.querySelector('[data-auth-screen] a[href$="/c/all"]')),
+          fullHeight:
+            Math.round(
+              document.querySelector("[data-auth-screen]")?.getBoundingClientRect().height ?? 0
+            ) >= window.innerHeight - 1,
+        };
+      });
+
+      // ١) ما حولها فارغ — وهو الفرقُ بين شاشةٍ وصفحة.
+      !r.chrome.header && !r.chrome.footer && !r.chrome.tabs
+        ? pass(`[${loc.code}] لا ترويسةَ ولا تذييلَ ولا تبويبات — لا مخارجَ من المهمّة`)
+        : fail(`[${loc.code}] ما حولها ظاهر: ${JSON.stringify(r.chrome)}`);
+
+      r.fullHeight && r.h1 === 1
+        ? pass(`[${loc.code}] وتملأ الشاشةَ، وعنوانٌ واحد`)
+        : fail(`[${loc.code}] ملءُ الشاشة=${r.fullHeight} · عناوين=${r.h1}`);
+
+      // ٢) 🔴 أهدافُ اللمس: ٤٨ بكسل حدّاً أدنى، و١٦ للخطّ.
+      //    ودون ١٦ يُكبّر iOS الصفحةَ عند التركيز — فتُزاح الشاشة.
+      const ok48 = (f) => f && f.h >= 48 && f.fs >= 16;
+      ok48(r.email) && ok48(r.password) && r.submitH >= 48
+        ? pass(
+            `[${loc.code}] الحقولُ ${r.email.h}px/${r.email.fs}px والزرُّ ${r.submitH}px — لا تكبيرَ ولا خطأَ لمس`
+          )
+        : fail(
+            `[${loc.code}] أهدافُ اللمس: بريد=${JSON.stringify(r.email)} ` +
+              `كلمة=${JSON.stringify(r.password)} زر=${r.submitH}`
+          );
+
+      r.guest
+        ? pass(`[${loc.code}] ومخرجُ الضيف معلَنٌ — فالشاشةُ ليست جداراً`)
+        : fail(`[${loc.code}] لا مخرجَ للضيف: من لا يريد حساباً يظنّ أن لا سبيلَ إلى المتجر`);
+
+      // ٣) والعينُ تعمل فعلاً — لا أيقونةً لا تفعل شيئاً.
+      if (!r.eye) {
+        fail(`[${loc.code}] لا زرَّ إظهارٍ لكلمة المرور`);
+      } else {
+        const before = await page.getAttribute('input[autocomplete="current-password"]', "type");
+        await page.click("button[aria-pressed]");
+        const after = await page.getAttribute('input[autocomplete="current-password"]', "type");
+        before === "password" && after === "text"
+          ? pass(`[${loc.code}] وزرُّ الإظهار يكشف الكلمةَ فعلاً (${before} ⇐ ${after})`)
+          : fail(`[${loc.code}] زرُّ الإظهار لا يغيّر شيئاً: ${before} ⇐ ${after}`);
+      }
+    } catch (e) {
+      fail(`[${loc.code}] تعذّر فحصُ شاشة الدخول (${String(e.message).slice(0, 90)})`);
+    }
+    await page.close();
+  }
+}
+
 async function a11yChecks(ctx) {
   console.log("\n== ♿ إتاحةُ الوصول — axe على كلّ صفحةٍ بلغتيها ==");
 
@@ -238,8 +411,13 @@ async function a11yChecks(ctx) {
 
   const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
+  // وشاشةُ الدخول معها: هي **نموذجٌ**، وهناك تسكن أخطاءُ الوصول
+  // (تسميةٌ مفقودةٌ، خطأٌ لا يُعلَن، تباينٌ ضعيفٌ على حقلٍ معطَّل).
+  // وهي ليست في `PAGES` لأن فحوصَ الاتجاه والسرعة تخصّ صفحاتِ المتجر.
+  const A11Y_PAGES = [...PAGES, ["/account/login", "شاشة الدخول"]];
+
   for (const loc of LOCALES)
-    for (const [rawPath, label] of PAGES) {
+    for (const [rawPath, label] of A11Y_PAGES) {
       const path = `/${loc.code}${rawPath}`;
       const page = await ctx.newPage();
       try {
@@ -1252,6 +1430,7 @@ try {
     );
   }
 
+  await appShellChecks(ctx);
   await a11yChecks(ctx);
   await filterChecks(ctx);
   await buyOnce(ctx);

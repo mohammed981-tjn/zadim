@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { Container } from "@/components/container"
-import { AuthForm } from "@/components/account/auth-form"
+import { AuthScreen } from "@/components/account/auth-screen"
 import { isSignedIn } from "@/lib/auth-actions"
 import { t, type Locale } from "@/lib/i18n"
 
@@ -21,13 +20,5 @@ export default async function LoginPage({ params }: { params: Promise<{ locale: 
   // من كان داخلاً لا يُعرض له نموذجُ دخول: يُردّ إلى حسابه.
   if (await isSignedIn()) redirect(`/${locale}/account`)
 
-  return (
-    <Container className="py-10 sm:py-16">
-      <div className="mx-auto max-w-md">
-        <h1 className="mb-2 text-2xl font-bold sm:text-3xl">{t(locale, "account.signIn")}</h1>
-        <p className="mb-8 text-sm text-muted-foreground">{t(locale, "account.signInLede")}</p>
-        <AuthForm locale={locale} mode="signin" />
-      </div>
-    </Container>
-  )
+  return <AuthScreen locale={locale} mode="signin" />
 }
