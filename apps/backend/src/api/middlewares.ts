@@ -11,6 +11,7 @@ import { ACCESS_MODULE } from "../modules/access";
 import type AccessModuleService from "../modules/access/service";
 import { isExempt, readCount, readField, ruleFor } from "../modules/access/permission-map";
 import { rateLimit } from "../modules/access/rate-limit";
+import { guardLogin } from "../modules/access/lockout";
 import { overlayTranslations } from "../modules/catalog/overlay";
 import { observe } from "../modules/observability/middleware";
 
@@ -241,7 +242,9 @@ export default defineMiddlewares({
     //
     // ⚠️ و`observe` **قبل الجميع**: سجلٌّ لا يرى إلا ما مرّ يُخفي
     // بالضبط ما يُبحث عنه — موجةَ ٤٢٩ وموجةَ ٤٠٣.
-    { matcher: "/auth/*", middlewares: [observe, rateLimit] },
+    // و`guardLogin` **بعد** حدّ المعدّل: الحدُّ أرخصُ (عدّادٌ واحد)
+    // وهذا يقرأ دفتراً، فلا يُحمَّل على موجةٍ سيردّها ما قبلَه.
+    { matcher: "/auth/*", middlewares: [observe, rateLimit, guardLogin] },
     { matcher: "/store/*", middlewares: [observe, rateLimit] },
     {
       matcher: "/admin/*",

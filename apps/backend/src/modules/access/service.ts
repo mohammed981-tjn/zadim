@@ -7,6 +7,8 @@ import {
   AuditLog,
   RateLimitPolicy,
   RateLimitCounter,
+  LoginFailure,
+  LockoutPolicy,
 } from "./models";
 
 export type AccessDecision =
@@ -52,6 +54,10 @@ class AccessModuleService extends MedusaService({
   // سطحَ الأمن في مكانٍ واحدٍ يُقرأ مرّة.
   RateLimitPolicy,
   RateLimitCounter,
+  // وإقفالُ الحساب بعد فشلٍ متكرّرٍ يسكن هنا للسبب نفسِه: حدُّ المعدّل
+  // يحرس **العنوان** وهذا يحرس **الهويّة**، وهما وجهان لبابٍ واحد.
+  LoginFailure,
+  LockoutPolicy,
 }) {
   /**
    * هل يملك المستخدم هذه الصلاحية — وضمن حدّه؟

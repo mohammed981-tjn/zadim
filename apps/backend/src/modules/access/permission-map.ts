@@ -244,6 +244,10 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/access\/roles(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "roles.manage" },
   { pattern: /^\/access\/assignments(\/|$)/, methods: ["GET", "POST", "DELETE"], permission: "users.manage" },
   { pattern: /^\/access\/audit(\/|$)/, methods: ["GET"], permission: "audit.read" },
+  // الإقفالُ قراءةً يخدم التشخيص (من يُهاجَم؟) فيكفيه `audit.read`،
+  // وضبطُه يغيّر حارساً أمنياً فيلزمه `settings.manage`.
+  { pattern: /^\/access\/lockout(\/|$)/, methods: ["GET"], permission: "audit.read" },
+  { pattern: /^\/access\/lockout(\/|$)/, methods: ["POST"], permission: "settings.manage" },
 
   // ── 🔴 قراءةُ اللوحة — ما تناديه شاشاتُ Medusa نفسُها ──────────────
   //
