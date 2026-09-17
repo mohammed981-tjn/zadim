@@ -248,6 +248,111 @@ export default async function verifySecurity({ container }: ExecArgs) {
   if ((left?.rows?.[0]?.n ?? 1) !== 0) fail("الكنسُ لم يحذف عدّاداً منتهياً");
   else pass("الكنسُ يحذف المنتهي");
 
+  // ── ٩) 🔴 إقفالُ الحساب: الهويّةُ لا العنوان ───────────────────
+  //
+  // ── لماذا حارسٌ ثانٍ وقد مضى حدُّ المعدّل أعلاه ─────────────────
+  //
+  // لأنهما يحرسان **مفتاحين مختلفين**. حدُّ `/auth` عشرٌ في الدقيقة
+  // بالعنوان: يوقف من يجرّب من حاسوبه. وشبكةٌ بعشرة آلاف عنوانٍ تجرّب
+  // حساباً واحداً تُنتج **مئةَ ألفِ محاولةٍ في الدقيقة** وكلُّها تحت
+  // الحدّ — فالحدُّ بالعنوان **لا يرى الهجومَ أصلاً**.
+  logger.info("== إقفالُ الحساب: الهويّةُ لا العنوان ==");
+
+  const lid = `lgf_gate_${Date.now().toString(36)}`;
+  const ident = `gate-${Date.now().toString(36)}@zadim.test`;
+  try {
+    await pg.raw(
+      `insert into "zadim_login_failure"("id","identity_key","actor_type","ip")
+       values (?, ?, 'customer', '9.9.9.9')`,
+      [lid, ident]
+    );
+
+    // أ) الدفترُ يُلحَق ولا يُمسّ — ومن حذف صفوفَه جرّب بلا حدّ.
+    await pg.raw(`update "zadim_login_failure" set "identity_key" = 'x' where "id" = ?`, [lid]);
+    await pg.raw(`delete from "zadim_login_failure" where "id" = ?`, [lid]);
+    const row = (
+      await pg.raw(`select "identity_key" from "zadim_login_failure" where "id" = ?`, [lid])
+    )?.rows?.[0];
+    row?.identity_key === ident
+      ? pass("الدفترُ لا يُعدَّل ولا يُحذف — والحذفُ يمرّ بلا خطأٍ ولا أثر")
+      : fail(`دفترُ الفشل مُسّ: ${JSON.stringify(row)}`);
+
+    // ب) والعدُّ من الصفوف داخل النافذة — لا عدّادَ مخزَّن.
+    const inWindow = (
+      await pg.raw(
+        `select count(*)::int as n from "zadim_login_failure"
+          where "identity_key" = ? and "created_at" > now() - interval '900 seconds'`,
+        [ident]
+      )
+    )?.rows?.[0]?.n;
+    Number(inWindow) === 1
+      ? pass("والعدُّ يُجمع من الصفوف داخل النافذة")
+      : fail(`العدُّ ${inWindow} والمتوقّع ١`);
+
+    // ج) وصفٌّ خارجَ النافذة لا يُعدّ — وإلا بقي الحسابُ مقفلاً أبداً.
+    //    (يُكتب بتاريخٍ قديمٍ مباشرةً: القاعدةُ تمنع التعديل لا الإدخال.)
+    const oldId = `${lid}_old`;
+    await pg.raw(
+      `insert into "zadim_login_failure"("id","identity_key","actor_type","created_at")
+       values (?, ?, 'customer', now() - interval '2 hours')`,
+      [oldId, ident]
+    );
+    const still = (
+      await pg.raw(
+        `select count(*)::int as n from "zadim_login_failure"
+          where "identity_key" = ? and "created_at" > now() - interval '900 seconds'`,
+        [ident]
+      )
+    )?.rows?.[0]?.n;
+    Number(still) === 1
+      ? pass("وفشلٌ قديمٌ خارج النافذة لا يُعدّ — فالإقفالُ لا يخلُد")
+      : fail(`القديمُ عُدّ: ${still}`);
+
+    // د) صفّان لنفس نوع الفاعل مرفوضان — لا يُعرف أيُّهما حَكَم.
+    const dupe = await pg
+      .raw(
+        `insert into "zadim_lockout_policy"
+           ("id","actor_type","window_seconds","max_failures","lock_seconds")
+         values (?, 'customer', 900, 5, 600)`,
+        [`lop_dupe_${Date.now().toString(36)}`]
+      )
+      .then(() => "مرّ")
+      .catch(() => null);
+    dupe === null
+      ? pass("وسياسةٌ ثانيةٌ لنفس نوع الفاعل تُرفض في القاعدة")
+      : fail("سياستان على نفس النوع مرّتا — ولا يُعرف أيُّهما يحكم");
+
+    // هـ) والأصفارُ مرفوضةٌ في القاعدة: سقفُ صفرٍ يقفل عند أوّل محاولة.
+    const zero = await pg
+      .raw(
+        `insert into "zadim_lockout_policy"
+           ("id","actor_type","window_seconds","max_failures","lock_seconds")
+         values (?, 'user', 900, 0, 600)`,
+        [`lop_zero_${Date.now().toString(36)}`]
+      )
+      .then(() => "مرّ")
+      .catch(() => null);
+    zero === null
+      ? pass("وسقفُ صفرٍ يُرفض في القاعدة — الإطفاءُ بـ«enabled» لا بصفر")
+      : fail("سقفُ صفرٍ مرّ — فكلُّ حسابٍ يُقفل عند أوّل محاولة");
+
+    // و) والسياستان مبذورتان فعلاً — فالكودُ بلا صفٍّ لا يقفل شيئاً.
+    const seeded = (
+      await pg.raw(
+        `select count(*)::int as n from "zadim_lockout_policy"
+          where "enabled" = true and "deleted_at" is null`
+      )
+    )?.rows?.[0]?.n;
+    Number(seeded) >= 2
+      ? pass(`وسياساتُ الإقفال مبذورةٌ ونافذة (${seeded})`)
+      : fail(`سياساتُ الإقفال ${seeded} — والحارسُ بلا صفٍّ لا يقفل شيئاً`);
+  } finally {
+    // تنظيفٌ: الدفترُ محميٌّ بقاعدة، فتُعطَّل للحذف ثم تُعاد.
+    await pg.raw(`alter table "zadim_login_failure" disable rule "zadim_login_failure_no_delete"`);
+    await pg.raw(`delete from "zadim_login_failure" where "identity_key" = ?`, [ident]);
+    await pg.raw(`alter table "zadim_login_failure" enable rule "zadim_login_failure_no_delete"`);
+  }
+
   if (failures) {
     throw new Error(`🔴 بوّابة المرحلة ١٥ سقطت — ${failures} فحصاً`);
   }

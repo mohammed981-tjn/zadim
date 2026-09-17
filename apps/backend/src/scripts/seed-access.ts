@@ -174,6 +174,18 @@ const ROLES: Array<{
  *
  * والأرقامُ أدناه **نقطةُ بدءٍ محافظة**، تُضبط بالمشاهدة بعد الإطلاق.
  */
+const LOCKOUTS: Array<{
+  actor_type: "user" | "customer";
+  window_seconds: number;
+  max_failures: number;
+  lock_seconds: number;
+}> = [
+  // العميل: نافذةُ ربعِ ساعةٍ وعشرون فشلاً ثم إقفالُ ربعِ ساعة.
+  { actor_type: "customer", window_seconds: 900, max_failures: 20, lock_seconds: 900 },
+  // والإدارةُ أضيق: عشرُ محاولاتٍ ثم نصفُ ساعة.
+  { actor_type: "user", window_seconds: 900, max_failures: 10, lock_seconds: 1800 },
+];
+
 const RATE_LIMITS: Array<{
   name: string;
   path_prefix: string;
@@ -308,6 +320,30 @@ export default async function seedAccess({ container }: ExecArgs) {
   }
   logger.info(
     `سياساتُ الحدّ: ${policyNames.size + missingPolicies.length} (جديدة: ${missingPolicies.length})`
+  );
+
+  // ── سياساتُ إقفال الحساب ────────────────────────────────────────
+  //
+  // 🔴 وبذرُها **شرطُ عملِ الحارس**: الكودُ بلا صفٍّ لا يقفل شيئاً
+  // (فشلٌ مفتوحٌ بقصد)، فالصفُّ هو ما يُحوّله من شيفرةٍ إلى حارس.
+  //
+  // والأرقامُ اجتهادٌ أوّليٌّ يضبطه المديرُ من لوحته، لا ثوابتُ عمل:
+  // عشرون فشلاً في ربع ساعةٍ ثمنُها على العميل صفرٌ تقريباً (من نسي
+  // كلمتَه يجرّب ثلاثاً أو أربعاً)، وعلى المهاجم كلُّ شيء — إذ يحوّل
+  // «مئةَ ألفِ محاولةٍ في الدقيقة» إلى ثمانين في الساعة.
+  //
+  // والإدارةُ أضيق: حساباتُها معدودةٌ ومعروفةٌ وأصحابُها يُسألون.
+  const existingLockouts = await access.listLockoutPolicies(
+    {},
+    { select: ["id", "actor_type"] }
+  );
+  const lockoutActors = new Set(existingLockouts.map((p: any) => p.actor_type));
+  const missingLockouts = LOCKOUTS.filter((p) => !lockoutActors.has(p.actor_type));
+  if (missingLockouts.length) {
+    await access.createLockoutPolicies(missingLockouts);
+  }
+  logger.info(
+    `سياساتُ الإقفال: ${lockoutActors.size + missingLockouts.length} (جديدة: ${missingLockouts.length})`
   );
 
   logger.info("✅ بذرُ الصلاحيات تمّ.");

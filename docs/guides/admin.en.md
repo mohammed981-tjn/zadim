@@ -29,6 +29,7 @@ and conclude the system is broken.
 | Stock adjustments (request/approve/apply) | ✅ `/app/zadim/adjustments` |
 | Coupon policies (per-customer limit · discount cap) | ✅ `/app/zadim/coupon-policies` |
 | Flash sales (window · unit cap · per-customer limit) | ✅ `/app/zadim/flash-sales` |
+| Account lockout after repeated failures · failure ledger | ✅ `/app/zadim/lockout` |
 | Suppliers | ✅ `/app/zadim/suppliers` |
 | Purchase orders (create/place/receive) | ✅ `/app/zadim/purchase-orders` |
 | Low-stock alert thresholds and current breaches | ✅ `/app/zadim/alert-rules` |
@@ -348,6 +349,36 @@ first order**.
   **remainder**. On a 100-riyal cart, a 30 fixed plus 20% gives 44
   riyals off, not 50.
 
+
+---
+
+## Account lockout — `/app/zadim/lockout`
+
+Temporarily locks an account after repeated failed sign-ins.
+
+- **Why, when rate limiting already exists?** Rate limiting guards the
+  **IP address**: ten attempts per minute per address. A botnet of ten
+  thousand addresses trying one account produces a hundred thousand
+  attempts a minute — **all of them under the limit**. This screen
+  guards the **identity**, not the address.
+- **Failures are counted, not attempts**: someone with the app open in
+  two tabs who signs in twice is not locked out.
+- Three numbers per actor type (staff · customers): the **counting
+  window**, the **failure ceiling**, and the **lock duration** — which
+  is measured from the **last** failure, so an attacker who keeps
+  guessing extends their own lock.
+- 🔴 **The trade-off is stated plainly**: anyone who knows a customer's
+  email can lock that account temporarily by failing sign-in on
+  purpose. That is why the lock is **temporary**, and the screen warns
+  you if you set a duration over a day or a ceiling under four
+  attempts.
+- **The "failures in the last 24 hours" table and its "sources" column
+  are the diagnostic**: one source means a customer who forgot a
+  password; hundreds mean a distributed attack.
+- **The ledger cannot be touched**: no updates, no deletes — anyone who
+  could delete its rows could guess without limit.
+- No policy row ⇒ **no lockout**, not everyone locked out. A missing
+  table must not keep people out of their own store.
 
 ---
 

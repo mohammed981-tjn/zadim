@@ -519,6 +519,51 @@ jobs:
       #
       # فلا يُثبتها إلا نداءٌ حقيقيٌّ على خادمٍ حيّ: عشرٌ تمرّ (401 —
       # وصلت المصادقةَ فعلاً)، والحاديةَ عشرةَ **429**.
+      # 🔴 والإقفالُ **قبل** حدّ المعدّل: هذا يحتاج خمسةَ نداءاتٍ، وذاك
+      # يستنفد أحدَ عشرَ من حصّة العنوان. وبعده تُنظَّف العدّاداتُ ودفترُ
+      # الفشل فيبدأ التالي من صفر — وإلا اختلط الحارسان في التشخيص.
+      - name: إقفالُ الحساب — الهويّةُ لا العنوان، على خادمٍ حيّ
+        run: |
+          set -euo pipefail
+          PSQL="psql $DATABASE_URL -tAc"
+          EMAIL="lockout-probe@zadim.test"
+          OTHER="lockout-other@zadim.test"
+
+          # سقفٌ ضيّقٌ للقياس وحدَه — ويُعاد بعده.
+          $PSQL "update zadim.zadim_lockout_policy set max_failures = 3 where actor_type = 'user'" >/dev/null
+
+          hit() { curl -s -o /tmp/lock-body.json -w "%{http_code}" -X POST \
+            http://localhost:9000/auth/user/emailpass \
+            -H "Content-Type: application/json" -d "{\"email\":\"$1\",\"password\":\"wrong-$RANDOM\"}"; }
+
+          for i in 1 2 3; do
+            CODE=$(hit "$EMAIL")
+            if [ "$CODE" != "401" ]; then
+              echo "::error::المحاولة $i أعطت $CODE لا 401"; exit 1
+            fi
+          done
+
+          CODE=$(hit "$EMAIL")
+          if [ "$CODE" != "429" ]; then
+            echo "::error::الرابعة أعطت $CODE لا 429 — الحارسُ غيرُ مركَّبٍ أو السياسةُ غيرُ مبذورة"; exit 1
+          fi
+          if ! grep -q "ACCOUNT_LOCKED" /tmp/lock-body.json; then
+            echo "::error::٤٢٩ بلا ACCOUNT_LOCKED — الردُّ من حدّ المعدّل لا من الإقفال"; exit 1
+          fi
+
+          # 🔴 والشاهدُ السالب: هويّةٌ أخرى تمرّ — وإلا كان الإقفالُ عامّاً.
+          CODE=$(hit "$OTHER")
+          if [ "$CODE" != "401" ]; then
+            echo "::error::هويّةٌ أخرى أعطت $CODE — الإقفالُ ليس بالهويّة"; exit 1
+          fi
+          echo "✅ ثلاثٌ ترد ٤٠١ · والرابعةُ ٤٢٩ ACCOUNT_LOCKED · وهويّةٌ أخرى تمرّ"
+
+          $PSQL "update zadim.zadim_lockout_policy set max_failures = 10 where actor_type = 'user'" >/dev/null
+          $PSQL "alter table zadim.zadim_login_failure disable rule zadim_login_failure_no_delete" >/dev/null
+          $PSQL "delete from zadim.zadim_login_failure" >/dev/null
+          $PSQL "alter table zadim.zadim_login_failure enable rule zadim_login_failure_no_delete" >/dev/null
+          $PSQL "delete from zadim.zadim_rate_limit_counter" >/dev/null
+
       - name: حارسُ المعدّل — نداءٌ حقيقيٌّ على خادمٍ حيّ
         run: |
           set -euo pipefail
