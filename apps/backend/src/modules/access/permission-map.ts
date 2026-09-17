@@ -105,6 +105,17 @@ export const ADMIN_ROUTE_RULES: RouteRule[] = [
   { pattern: /^\/coupons\/policies(\/|$)/, methods: ["GET"], permission: "coupons.manage" },
   { pattern: /^\/coupons\/policies(\/|$)/, methods: ["POST", "PATCH", "DELETE"], permission: "coupons.manage" },
 
+  // ── التخفيضُ الخاطف (بند ٢٨) ───────────────────────────────────
+  //
+  // تحت `coupons.manage` نفسِها: هو نافذةٌ وسقفٌ **فوق عرضٍ قائم**، ومن
+  // يضبط سقفَ الخصم هو من يضبط سقفَ الكمّية. وصلاحيةٌ ثالثةٌ لبابٍ واحدٍ
+  // تُوزَّع خطأً ثم تُنسى.
+  //
+  // ⚠️ **والقراءةُ محروسةٌ كالكتابة** للسبب نفسِه: المتبقّي من العرض
+  // معلومةٌ يبني عليها من يريد استنزافَه قبل الناس.
+  { pattern: /^\/flash-sales(\/|$)/, methods: ["GET"], permission: "coupons.manage" },
+  { pattern: /^\/flash-sales(\/[^/]+)?$/, methods: ["POST", "DELETE"], permission: "coupons.manage" },
+
   // ── وحدة catalog ────────────────────────────────────────────────
   // الخصائصُ جزءٌ من الكتالوج: من يملك المنتجات يملكها. والمرادفاتُ
   // أداةُ تسويقٍ وبحث — بيتُها عند مدير التسويق لا عند مدير المنتجات،
