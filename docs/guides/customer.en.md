@@ -1,6 +1,6 @@
 # Shopping at Zadim
 
-> Last updated: 2026-09-03 — matches the reviews batch.
+> Last updated: 2026-09-17 — matches the app layer and sign-in screen.
 > This guide describes the store **as it is today**. Anything not built
 > yet is said so plainly here, rather than left for you to discover.
 
@@ -183,6 +183,36 @@ does not create a second copy.
 That changes later.
 
 ---
+
+## On a phone — and in the app
+
+A bottom bar with four tabs stays with you on every screen: **Home ·
+Shop · Cart · Account**. The tab you are on is coloured, so you always
+know where you are.
+
+- **Search stays at the top**, not in the bar: that is where the
+  keyboard is, and repeating it at the bottom would only squeeze the
+  tabs.
+- **On a computer the bar does not appear** — the top header is enough.
+- And if you install Zadim as an app, the site footer disappears:
+  policy links are website pages, not app screens, and you can still
+  reach them from your account page and from the website.
+
+### The sign-in screen
+
+`/en/account/login` is **a screen, not a page**: no header, no footer,
+no tab bar — a logo, two fields and a button.
+
+- **The eye button** next to the password reveals it. That is
+  deliberate: typing on a phone goes wrong, and someone who cannot type
+  their strong password will pick a weaker one.
+- **"Browse without signing in"** sits at the bottom — the store sells
+  without an account, so the screen is not a wall.
+- **The back arrow** at the top returns you to the home page.
+
+⚠️ **After repeated failed sign-ins the account is locked temporarily**
+and you are told how long to wait. This protects your account from
+someone guessing your password.
 
 ## Checking out
 

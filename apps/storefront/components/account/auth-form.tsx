@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { register, signIn } from "@/lib/auth-actions"
 import { t, type Locale } from "@/lib/i18n"
@@ -17,6 +18,7 @@ export function AuthForm({ locale, mode }: { locale: Locale; mode: "signin" | "r
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -93,13 +95,39 @@ export function AuthForm({ locale, mode }: { locale: Locale; mode: "signin" | "r
         onChange={(v) => setForm((f) => ({ ...f, email: v }))}
         type="email"
         autoComplete="email"
+        inputMode="email"
+        enterKeyHint="next"
       />
       <Input
         label={t(locale, "account.password")}
         value={form.password}
         onChange={(v) => setForm((f) => ({ ...f, password: v }))}
-        type="password"
+        type={showPassword ? "text" : "password"}
         autoComplete={isRegister ? "new-password" : "current-password"}
+        enterKeyHint="go"
+        /*
+         * 🔴 إظهارُ كلمة المرور ليس ترفاً على الجوّال.
+         *
+         * لوحةُ مفاتيح الهاتف تُخفي الحرفَ بعد لحظة، وكلمةٌ قويّةٌ فيها
+         * رموزٌ تُكتب خطأً مرّتين وثلاثاً. والبديلُ الذي يختاره الناسُ
+         * حين يعجزون **كلمةٌ أضعف**، لا محاولةٌ أدقّ. فالعينُ هنا تزيد
+         * الأمانَ ولا تنقصه.
+         */
+        trailing={
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={t(locale, showPassword ? "account.hidePassword" : "account.showPassword")}
+            aria-pressed={showPassword}
+            className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {showPassword ? (
+              <EyeOff className="size-5" aria-hidden="true" />
+            ) : (
+              <Eye className="size-5" aria-hidden="true" />
+            )}
+          </button>
+        }
       />
 
       {/* الخطأُ في منطقةٍ حيّة: قارئُ الشاشة يعلنه دون أن يفقد المستخدمُ
@@ -110,7 +138,7 @@ export function AuthForm({ locale, mode }: { locale: Locale; mode: "signin" | "r
         </p>
       ) : null}
 
-      <Button type="submit" className="h-11 w-full" disabled={!filled || pending}>
+      <Button type="submit" className="h-12 w-full text-base" disabled={!filled || pending}>
         {pending
           ? t(locale, "account.working")
           : isRegister
@@ -131,29 +159,50 @@ export function AuthForm({ locale, mode }: { locale: Locale; mode: "signin" | "r
   )
 }
 
+/**
+ * الحقل — **و`h-12` و`text-base` ليسا ذوقاً**.
+ *
+ * ارتفاعُ ٤٨ بكسل هو أصغرُ هدفِ لمسٍ توصي به إرشاداتُ المنصّتين، ودونه
+ * تُخطئ الأصابعُ الكبيرة. و`text-base` (١٦ بكسل) أصغرُ قياسٍ **لا
+ * يُكبّر معه iOS الصفحةَ تلقائياً عند التركيز** — وتكبيرٌ مفاجئٌ عند
+ * أوّل حقلٍ يكسر الإيهامَ بأنه تطبيق، ويترك الزائرَ في صفحةٍ مزاحة.
+ */
 function Input({
   label,
   value,
   onChange,
   type = "text",
   autoComplete,
+  inputMode,
+  enterKeyHint,
+  trailing,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   type?: string
   autoComplete?: string
+  inputMode?: "email" | "tel" | "text"
+  enterKeyHint?: "next" | "go" | "done"
+  trailing?: React.ReactNode
 }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-sm font-medium">{label}</span>
-      <input
-        type={type}
-        value={value}
-        autoComplete={autoComplete}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-      />
+      <span className="relative flex items-center">
+        <input
+          type={type}
+          value={value}
+          autoComplete={autoComplete}
+          inputMode={inputMode}
+          enterKeyHint={enterKeyHint}
+          onChange={(e) => onChange(e.target.value)}
+          className={`h-12 w-full rounded-xl border border-border bg-background px-4 text-base outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/30 ${
+            trailing ? "pe-12" : ""
+          }`}
+        />
+        {trailing ? <span className="absolute end-1">{trailing}</span> : null}
+      </span>
     </label>
   )
 }

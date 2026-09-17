@@ -4,6 +4,7 @@ import { IBM_Plex_Sans_Arabic } from "next/font/google"
 import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import { ServiceWorker } from "@/components/service-worker"
+import { BottomTabs } from "@/components/app-shell/bottom-tabs"
 import { dirOf, isLocale, t, type Locale } from "@/lib/i18n"
 
 /**
@@ -119,10 +120,22 @@ export default async function LocaleLayout({
             فتُضغط Tab بعده فيعود إلى الترويسة من أوّلها. فالرابطُ يبدو
             عاملاً وهو لا يعمل.
           */}
+          {/*
+            ⚠️ والمساحةُ أسفلَ المحتوى تُحسب في `globals.css` لا هنا:
+            الشريطُ السفليُّ `fixed` — خارجَ التدفّق، لا يدفع شيئاً —
+            وبدونها يقع آخرُ سطرٍ في كلّ صفحةٍ **خلفه**، وأوّلُ ما
+            يختفي زرُّ «أتمم الطلب» في أسفل السلّة.
+
+            وسببُ خروجها إلى CSS أنها **ليست رقماً ثابتاً**: ارتفاعُ
+            الشريط ٦٤ + حدٌّ علويٌّ + `safe-area-inset` يختلف بالجهاز.
+            وقِيس: `pb-16` تركت بكسلاً واحداً تحت الحدّ، وأمسكته
+            البوّابةُ في أوّل تشغيلة.
+          */}
           <main id="main" tabIndex={-1} className="flex-1 outline-none">
             {children}
           </main>
           <SiteFooter locale={locale} />
+          <BottomTabs locale={locale} />
         </div>
       </body>
     </html>
