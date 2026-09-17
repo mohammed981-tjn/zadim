@@ -1,5 +1,5 @@
 import { MedusaService } from "@medusajs/framework/utils";
-import { CouponPolicy, CouponRedemption } from "./models";
+import { CouponPolicy, CouponRedemption, FlashSale, FlashSaleClaim } from "./models";
 
 /**
  * سياساتُ الكوبونات — طبقتُنا فوق محرّك Medusa.
@@ -10,6 +10,8 @@ import { CouponPolicy, CouponRedemption } from "./models";
 class PromotionsPolicyService extends MedusaService({
   CouponPolicy,
   CouponRedemption,
+  FlashSale,
+  FlashSaleClaim,
 }) {
   /** سياسةُ عرضٍ بعينه — أو `null` فيعمل بحدود Medusa وحدَها. */
   async policyFor(promotionId: string) {
@@ -26,6 +28,25 @@ class PromotionsPolicyService extends MedusaService({
       customer_id: customerId,
     })) as any[];
     return rows.length;
+  }
+
+  /**
+   * تخفيضُ عرضٍ بعينه — أو `null` فلا سقفَ ولا نافذةَ فوق المحرّك.
+   *
+   * ويُقرأ بالرمز لا بالمعرّف: الرمزُ هو ما يصل من تسوياتِ الطلب، وهو
+   * ما يراه المديرُ في اللوحة. والمعرّفُ يتغيّر بإعادة إنشاء العرض.
+   */
+  async flashByCode(code: string) {
+    if (!code) return null;
+    const rows = (await this.listFlashSales({ promotion_code: code })) as any[];
+    return rows[0] ?? null;
+  }
+
+  /** ما طُولب به صافياً — يُجمع من الدفتر ولا يُخزَّن عدّاداً. */
+  async flashClaimed(flashSaleId: string): Promise<number> {
+    if (!flashSaleId) return 0;
+    const rows = (await this.listFlashSaleClaims({ flash_sale_id: flashSaleId })) as any[];
+    return rows.reduce((sum, r) => sum + Number(r.quantity ?? 0), 0);
   }
 
   /** ترتيبُ التطبيق لكلّ رمز — يقرؤه `orderByPriority`. */

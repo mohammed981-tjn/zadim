@@ -1,6 +1,6 @@
 # Zadim store manager's guide
 
-> Last updated: 2026-09-04 — nine new screens (invoicing · cash-on-
+> Last updated: 2026-09-17 — flash sales, and before them nine screens (invoicing · cash-on-
 > delivery · stock adjustments · coupon policies · suppliers and
 > purchase orders · alert thresholds · the stock ledger · warehouse
 > profiles).
@@ -28,6 +28,7 @@ and conclude the system is broken.
 | Cash-on-delivery policy · refusals | ✅ `/app/zadim/cod-policy` |
 | Stock adjustments (request/approve/apply) | ✅ `/app/zadim/adjustments` |
 | Coupon policies (per-customer limit · discount cap) | ✅ `/app/zadim/coupon-policies` |
+| Flash sales (window · unit cap · per-customer limit) | ✅ `/app/zadim/flash-sales` |
 | Suppliers | ✅ `/app/zadim/suppliers` |
 | Purchase orders (create/place/receive) | ✅ `/app/zadim/purchase-orders` |
 | Low-stock alert thresholds and current breaches | ✅ `/app/zadim/alert-rules` |
@@ -336,6 +337,33 @@ first order**.
   **fixed-amount** coupon instead.
 - Deleting a policy does not erase customers' past redemptions — those
   are a separate ledger.
+
+
+---
+
+## Flash sales — `/app/zadim/flash-sales`
+
+A time-boxed, quantity-boxed offer: "50% off, first 100 units, today
+only."
+
+- **The discount itself is set in Medusa's promotions screen.** This
+  screen adds the three things the engine does not have: **when it
+  starts and ends**, **how many units**, and **how many per customer**.
+- An empty field means **no limit** — not zero. Use the "active" switch
+  to stop an offer immediately.
+- The "claimed / cap" column shows how much of the offer has sold and
+  how much is left, **computed from the ledger, not a stored counter**
+  — so it cannot drift.
+- 🔴 **The time shown here is your device's clock; the ruling clock is
+  the server's.** A slow device clock will show an offer as "live" that
+  the server refuses. That is deliberate: a browser timer can be set by
+  hand.
+- **Lowering the cap below what has already sold does not undo those
+  sales** — it only blocks new ones, and the screen tells you so at
+  that moment.
+- An offer that has claims **cannot be deleted, only stopped**:
+  deleting it would orphan the ledger, so nobody could tell which cap
+  those sales ran under.
 
 ---
 

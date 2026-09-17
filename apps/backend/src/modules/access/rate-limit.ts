@@ -53,6 +53,17 @@ export type Policy = {
  * وبصفرِ قفزاتٍ يُتجاهل الترويسُ كلُّه ويُؤخذ `req.ip` — وهو الصواب
  * في التطوير المحلّي وخلفَ لا شيء.
  */
+/**
+ * كم وكيلاً بيننا وبين الزائر — **قراءةٌ واحدةٌ للبيئة يشترك فيها كلُّ
+ * من يحتاج عنوانَ الزائر**.
+ *
+ * وقراءتان مستقلّتان للمتغيّر نفسه تنفصلان بصمت: يُضبط الوكيلُ في
+ * حارس المعدّل ويبقى السجلُّ يكتب عنوانَ الموازن لكل الناس.
+ */
+export function trustedHops(): number {
+  return Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "0", 10) || 0;
+}
+
 export function clientIp(req: MedusaRequest, hops: number): string {
   if (hops <= 0) return req.ip ?? "unknown";
 
@@ -234,8 +245,7 @@ export async function rateLimit(
     const policy = matchPolicy(policies, requestPath(req), req.method);
     if (!policy) return next();
 
-    const hops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "0", 10) || 0;
-    const ip = clientIp(req, hops);
+    const ip = clientIp(req, trustedHops());
     const actorId = req.auth_context?.actor_id ?? null;
     const scopeKey = scopeKeyFor(policy, ip, actorId);
 

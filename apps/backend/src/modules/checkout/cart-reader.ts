@@ -41,7 +41,27 @@ export const CART_FIELDS = [
   "items.variant_id",
   "items.quantity",
   "items.unit_price",
+  // 🔴 رموزُ الخصم المطبَّقة — يقرؤها حارسُ التخفيض الخاطف عند الإتمام.
+  // وبلا هذا السطر يقرأ الحارسُ سلّةً بلا رموزٍ فلا يجد عرضاً خاطفاً
+  // أبداً، **فيمرّ كلُّ سقفٍ بلا فحص** — وهو حارسٌ أخضرُ لا يحرس.
+  "items.adjustments.code",
 ];
+
+/**
+ * رموزُ الخصم المطبَّقة على السلّة — **بلا تكرار**.
+ *
+ * وتُقرأ من تسويّات البنود لا من حقلٍ في السلّة: هناك يضع المحرّكُ ما
+ * طُبِّق فعلاً، وما وُضع ولم يُطبَّق ليس خصماً.
+ */
+export function couponCodesOf(cart: any): string[] {
+  const codes = new Set<string>();
+  for (const item of ((cart?.items ?? []) as any[])) {
+    for (const adj of ((item?.adjustments ?? []) as any[])) {
+      if (adj?.code) codes.add(String(adj.code));
+    }
+  }
+  return [...codes];
+}
 
 export async function readCart(scope: any, id: string): Promise<any | null> {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY);

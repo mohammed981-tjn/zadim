@@ -13,8 +13,11 @@ import { PAYMENTS_MODULE } from "../payments";
 import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
 import { recordRedemptions } from "../promotions/apply";
+import { claimFlash, releaseFlash } from "../promotions/flash";
+import { COUPON_POLICY_MODULE } from "../promotions";
+import type PromotionsPolicyService from "../promotions/service";
 import { postSaleJournal } from "../ledger/post";
-import { cartLines, currentPrices, readCart } from "./cart-reader";
+import { cartLines, couponCodesOf, currentPrices, readCart } from "./cart-reader";
 import { readNationalAddress } from "./national-address";
 
 /**
@@ -329,6 +332,57 @@ export async function runCheckout(
     );
   }
 
+  // ── ٣ج) التخفيضُ الخاطف — **قبل الحجز وقبل الطلب** ───────────
+  //
+  // 🔴 وموضعُه هنا لا بعد الطلب. استهلاكُ الكوبون يُقيَّد بعده لأنه
+  // **عدٌّ لا سقف**: من تجاوز حدَّه يُكتشف لاحقاً ويُعالَج. أمّا سقفُ
+  // الكمّية فـ**سقفٌ حقيقيّ**: قطعةٌ بِيعت بعد النفاد لا تُستدرَك —
+  // إمّا تُشحن بسعرٍ خاسر أو يُلغى طلبٌ قُبِل. فالرفضُ قبل أخذ المال.
+  //
+  // والفحصُ كلُّه في القاعدة: هنا **كتابةٌ** لا قراءةٌ ثم كتابة. وقراءةُ
+  // المتبقّي هنا ثم الكتابةُ بعده تمرّ بينهما تسعٌ وتسعون محاولة — وهو
+  // بعينه ما سمح بـ٩٤ بيعاً من عشرة قبل حارس المخزون.
+  const policies = scope.resolve(COUPON_POLICY_MODULE) as PromotionsPolicyService;
+  const pgConn = scope.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+  const logger = scope.resolve(ContainerRegistrationKeys.LOGGER);
+  const flashClaims: Array<{ flash_sale_id: string; quantity: number }> = [];
+
+  // مفتاحُ العميل من العنوان المهيكل: الجوّالُ هناك موحَّدُ الصيغة،
+  // وصيغتان لرقمٍ واحد عميلان في نظر أيّ حدّ.
+  const flashKey = String(national.phone || cart.email || cartId);
+
+  for (const code of couponCodesOf(cart)) {
+    const sale = (await policies.flashByCode(code)) as any;
+    if (!sale) continue;
+
+    // كمّيةُ السلّة من هذا العرض: سقفُ «مئةِ قطعة» يُعدّ قطعاً لا طلبات.
+    const qty = lines.reduce((n, l) => n + (Number(l.quantity) || 0), 0) || 1;
+
+    const claim = await claimFlash(scope, {
+      flash_sale_id: sale.id,
+      customer_key: flashKey,
+      cart_id: cartId,
+      quantity: qty,
+    });
+
+    if (!claim.ok) {
+      // وما طُولب به قبل هذا الرفض يُردّ: عرضان في سلّةٍ واحدة، نفد
+      // ثانيهما، فلا تُحبَس قطعةُ أوّلهما على طلبٍ لن يقع.
+      for (const done of flashClaims) {
+        await releaseFlash(scope, {
+          flash_sale_id: done.flash_sale_id,
+          customer_key: flashKey,
+          cart_id: cartId,
+          quantity: done.quantity,
+          reason: `رُفض عرضٌ آخرُ في نفس السلّة (${claim.code})`,
+        });
+      }
+      return finish(err(409, claim.code, claim.message_ar), claim.code);
+    }
+
+    flashClaims.push({ flash_sale_id: sale.id, quantity: qty });
+  }
+
   // ── ٤) المخزون: فحصٌ مسبقٌ واختيارُ المستودع ─────────────────
   const plan = await allocationFor(scope, warehouse, cart, lines);
   if (plan && !plan.fully_allocatable) {
@@ -381,6 +435,27 @@ export async function runCheckout(
       customer_id: (cart as any)?.customer_id ?? null,
     });
 
+    // ختمُ مطالبات العرض الخاطف بمعرّف الطلب — **وهو التحديثُ الوحيدُ
+    // الذي يسمح به الدفتر**: قاعدةُ المنع تشترط `order_id is not null`
+    // للقديم، فيمرّ الختمُ مرّةً ولا يُمسّ الصفُّ بعدها أبداً.
+    if (flashClaims.length) {
+      try {
+        await pgConn.raw(
+          `update "zadim_flash_sale_claim"
+              set "order_id" = ?
+            where "cart_id" = ? and "quantity" > 0 and "order_id" is null`,
+          [orderId, cartId]
+        );
+      } catch (err) {
+        // ولا يُسقط الطلب: القطعةُ مطالَبٌ بها والسقفُ محفوظ، وغيابُ
+        // الربط نقصُ أثرٍ يُرى في الفحص لا بيعٌ زائد.
+        logger.warn(
+          `[zadim] ⚠️ تعذّر ربطُ مطالبات العرض الخاطف بالطلب ${orderId}: ` +
+            String((err as Error)?.message ?? err)
+        );
+      }
+    }
+
     // 🔴 **قيدُ البيع — ولا يُسقط الطلب إن تعذّر.**
     //
     // والقرارُ هنا موازنةٌ بين سيّئين. فالطلبُ وقع والمالُ التُزم به
@@ -405,7 +480,6 @@ export async function runCheckout(
       } catch (err) {
         // ولا يُبتلع صامتاً: بلا سطرٍ في السجلّ يصير «طلبٌ بلا قيد»
         // لغزاً يُكتشف بعد شهرٍ في تسوية.
-        const logger = scope.resolve(ContainerRegistrationKeys.LOGGER);
         logger.error(
           `[zadim] تعذّر قيدُ البيع للطلب ${orderId}: ${(err as Error).message}`
         );
@@ -430,6 +504,20 @@ export async function runCheckout(
     );
   } catch (e: any) {
     const raw = String(e?.message ?? "");
+
+    // 🔴 **وتُردّ قطعُ العرض الخاطف قبل أيّ شيء**: طُولب بها قبل الطلب
+    // (الرفضُ قبل أخذ المال)، والطلبُ لم يقع. وحبسُها يعني عرضاً ينفد
+    // وهو لم يُبَع — وهو أسوأُ من بيعٍ زائد: لا أحدَ يشتكي منه فلا
+    // يُكتشف.
+    for (const done of flashClaims) {
+      await releaseFlash(scope, {
+        flash_sale_id: done.flash_sale_id,
+        customer_key: flashKey,
+        cart_id: cartId,
+        quantity: done.quantity,
+        reason: "سقط الإتمامُ بعد المطالبة",
+      });
+    }
 
     // 🔴 الحجزُ فشل رغم الفحص المسبق: بِيعَ ما في السلّة لعميلٍ آخر في
     // الثواني بين الفحص والحجز. وهذا **ليس عطلاً** — هو السباقُ الذي

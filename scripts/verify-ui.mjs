@@ -31,6 +31,8 @@
 
 import { chromium } from "playwright";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const WANT_LH = process.argv.includes("--lighthouse");
@@ -196,6 +198,159 @@ const ctx = await browser.newContext({
  * يُعيد «القسم غير موجود» — لأن Next يسلّم المقطعَ مرمَّزاً ثم كنّا
  * نرمّزه ثانية. ولم تمسكه بوّابةٌ لأن **لا بوّابةَ كانت تزور تصنيفاً**.
  */
+/**
+ * 🔴 إتاحةُ الوصول — البند ٥٫٦، وفحصٌ **منهجيٌّ** لا انطباع.
+ *
+ * ── ولماذا axe وقد كانت درجةُ Lighthouse خضراءَ منذ بُنيت ────────
+ *
+ * لأن درجةَ Lighthouse تُقاس على **الرئيسية وحدَها**، وفئةُ الوصول
+ * فيها مجموعةٌ مختصرةٌ من قواعد axe نفسِها. فصفحةُ المنتج والسلّةُ
+ * والبحثُ لم يكن يمرّ عليها فاحصٌ قطّ — وهي التي تحمل النماذجَ
+ * والأزرارَ والصور، أي كلَّ ما يُخطئ فيه الوصول.
+ *
+ * فهذه تُشغّل **قواعدَ WCAG 2.1 A/AA كاملةً على كلّ صفحةٍ بلغتيها** —
+ * ثماني تركيباتٍ لا واحدة.
+ *
+ * ── والسقوطُ على «جسيم» و«حرج» وحدَهما ───────────────────────────
+ *
+ * لا تساهلاً، بل لأن axe يصنّف بالأثر: «طفيف» يشمل توصياتٍ تتغيّر مع
+ * إصداره، وبوّابةٌ تنكسر بترقية مكتبةٍ تُعلّم قارئَها تجاهلَ الأحمر.
+ * والمتوسّطُ فما دون **يُطبع ولا يُبتلع** — يُقرأ ويُعالَج بقصد.
+ *
+ * ── ⚠️ وما لا يراه الفاحصُ الآليّ ────────────────────────────────
+ *
+ * axe لا يمشي بلوحة المفاتيح. وقاعدةُ `bypass` فيه تُرضيها معالمُ
+ * الصفحة، فمتجرٌ بلا رابطِ تخطٍّ يمرّ أخضرَ بينما يدفع كلُّ من لا يملك
+ * فأرةً **خمسَ ضغطاتٍ في كل صفحة** قبل أوّل منتج. فبعده مشيٌ حقيقيّ.
+ */
+async function a11yChecks(ctx) {
+  console.log("\n== ♿ إتاحةُ الوصول — axe على كلّ صفحةٍ بلغتيها ==");
+
+  let axeSrc;
+  try {
+    const require = createRequire(import.meta.url);
+    axeSrc = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
+  } catch (e) {
+    // ولا يُدَّعى نجاحٌ لم يقع: غيابُ الفاحص يُقال ويُعدّ سقوطاً.
+    fail(`تعذّر تحميلُ axe-core (${String(e.message).slice(0, 80)}) — ولا فحصَ وصولٍ جرى.`);
+    return;
+  }
+
+  const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+
+  for (const loc of LOCALES)
+    for (const [rawPath, label] of PAGES) {
+      const path = `/${loc.code}${rawPath}`;
+      const page = await ctx.newPage();
+      try {
+        await page.goto(BASE + path, { waitUntil: "networkidle", timeout: 45000 });
+        await page.addScriptTag({ content: axeSrc });
+        const res = await page.evaluate(
+          async (tags) =>
+            await window.axe.run(document, {
+              resultTypes: ["violations"],
+              runOnly: { type: "tag", values: tags },
+            }),
+          WCAG
+        );
+
+        const hard = res.violations.filter(
+          (v) => v.impact === "serious" || v.impact === "critical"
+        );
+        const soft = res.violations.filter(
+          (v) => v.impact !== "serious" && v.impact !== "critical"
+        );
+
+        hard.length === 0
+          ? pass(`${label} [${loc.code}]: لا مخالفةَ جسيمةً ولا حرجة`)
+          : fail(
+              `${label} [${loc.code}]: ${hard
+                .map((v) => `${v.id}×${v.nodes.length} (${v.nodes[0].target.join(" ")})`)
+                .join(" · ")}`
+            );
+        if (soft.length) {
+          console.log(
+            `     ℹ️  ${label} [${loc.code}] متوسّطٌ فما دون: ` +
+              soft.map((v) => `${v.id}×${v.nodes.length}`).join(" · ")
+          );
+        }
+      } catch (e) {
+        fail(`${label} [${loc.code}]: تعذّر فحصُ الوصول (${String(e.message).slice(0, 90)})`);
+      }
+      await page.close();
+    }
+
+  // ── المشيُ بلوحة المفاتيح — ما لا يراه الفاحصُ الآليّ ──────────
+  console.log("\n== ⌨️  المشيُ بلوحة المفاتيح ==");
+  for (const loc of LOCALES) {
+    const page = await ctx.newPage();
+    try {
+      await page.goto(`${BASE}/${loc.code}`, { waitUntil: "networkidle", timeout: 45000 });
+
+      // ١) أوّلُ ضغطةٍ تقع على رابط التخطّي — **ويُرى** حين يُركَّز.
+      await page.keyboard.press("Tab");
+      const first = await page.evaluate(() => {
+        const el = document.activeElement;
+        const r = el.getBoundingClientRect();
+        return { href: el.getAttribute("href"), w: r.width, h: r.height };
+      });
+      first.href === "#main" && first.w > 0 && first.h > 0
+        ? pass(`[${loc.code}] أوّلُ Tab: رابطُ التخطّي ظاهرٌ (${Math.round(first.w)}×${Math.round(first.h)})`)
+        : fail(`[${loc.code}] أوّلُ Tab ليس رابطَ تخطٍّ ظاهراً: ${JSON.stringify(first)}`);
+
+      // ٢) و**ينقل التركيزَ فعلاً** لا شريطَ التمرير وحدَه.
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(300);
+      const landed = await page.evaluate(() => document.activeElement?.id);
+      landed === "main"
+        ? pass(`[${loc.code}] وEnter ينقل التركيزَ إلى <main> لا إلى موضعِ التمرير فقط`)
+        : fail(`[${loc.code}] بعد التخطّي التركيزُ على «${landed}» لا «main»`);
+
+      // ٣) والتاليةُ داخلَ المحتوى — وإلا عاد إلى الترويسة فلا شيءَ تُخطّي.
+      await page.keyboard.press("Tab");
+      const inMain = await page.evaluate(() =>
+        Boolean(document.getElementById("main")?.contains(document.activeElement))
+      );
+      inMain
+        ? pass(`[${loc.code}] وTab بعده يقع داخل المحتوى`)
+        : fail(`[${loc.code}] وTab بعد التخطّي عاد خارجَ المحتوى — فالتخطّي لا يُخطّي`);
+
+      // ٤) وكلُّ محطّةٍ في أوّل عشرٍ لها أثرُ تركيزٍ مرئيّ.
+      const blind = [];
+      for (let i = 0; i < 10; i++) {
+        await page.keyboard.press("Tab");
+        const seen = await page.evaluate(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body) return null;
+          const cs = getComputedStyle(el);
+          const outlined = cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0;
+          const ringed = cs.boxShadow !== "none" && cs.boxShadow !== "";
+          return {
+            tag: el.tagName,
+            ok: outlined || ringed || cs.outlineStyle === "auto",
+          };
+        });
+        if (seen && !seen.ok) blind.push(`${seen.tag}#${i}`);
+      }
+      blind.length === 0
+        ? pass(`[${loc.code}] عشرُ محطّاتٍ متتاليةٍ كلُّها بأثرِ تركيزٍ مرئيّ`)
+        : fail(`[${loc.code}] محطّاتٌ بلا أثرِ تركيز: ${blind.join(" · ")}`);
+
+      // ٥) ومعلمٌ واحدٌ وعنوانٌ واحد.
+      const marks = await page.evaluate(() => ({
+        main: document.querySelectorAll("main").length,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      marks.main === 1 && marks.h1 === 1
+        ? pass(`[${loc.code}] <main> واحدٌ و<h1> واحد`)
+        : fail(`[${loc.code}] معالمُ الصفحة: main=${marks.main} h1=${marks.h1}`);
+    } catch (e) {
+      fail(`[${loc.code}] تعذّر المشيُ بلوحة المفاتيح (${String(e.message).slice(0, 90)})`);
+    }
+    await page.close();
+  }
+}
+
 async function filterChecks(ctx) {
   console.log("\n== 🔎 التصفيةُ بالخصائص (من المتصفّح) ==");
   const page = await ctx.newPage();
@@ -1097,6 +1252,7 @@ try {
     );
   }
 
+  await a11yChecks(ctx);
   await filterChecks(ctx);
   await buyOnce(ctx);
   await accountChecks();
