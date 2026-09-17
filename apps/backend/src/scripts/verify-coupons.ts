@@ -4,6 +4,7 @@ import { COUPON_POLICY_MODULE } from "../modules/promotions";
 import { validate, capWarning } from "../api/admin/coupons/policies/route";
 import type PromotionsPolicyService from "../modules/promotions/service";
 import { checkCoupon, orderByPriority, DEFAULT_PRIORITY } from "../modules/promotions/eligibility";
+import { isExempt, ruleFor } from "../modules/access/permission-map";
 
 /**
  * بوّابةُ الكوبونات والعروض (بندا ٢٦ و٢٧).
@@ -192,6 +193,35 @@ export default async function verifyCoupons({ container }: ExecArgs) {
   } finally {
     for (const id of ordMade) await promo.deletePromotions([id]);
   }
+
+  // ── ٢ج) 🔴 شاشةُ العروض التي لا نملكها — ولا نُغلقها بالخطأ ────
+  //
+  // «اشترِ X واحصل على Y» مبنيٌّ في Medusa: نوعٌ في المحرّك
+  // (`type: buyget`) **وشاشةٌ في لوحته** تُنشئه بقواعده. فلا يُبنى
+  // عندنا شيء — وقِيس حيّاً: `POST /admin/promotions` بـbuyget
+  // وقاعدةِ شراءٍ حقيقيةٍ ⇒ ٢٠٠ وعرضٌ أُنشئ.
+  //
+  // **والخطرُ الحقيقيُّ عكسيّ**: خريطةُ صلاحياتنا **ترفض افتراضياً**
+  // كلَّ مسارٍ لا قاعدةَ له. فمسحُ سطرِ `/promotions` من الخريطة
+  // يُغلق شاشةَ Medusa نفسَها بـ٤٠٣ — بلا خطأٍ في الكود ولا سطرِ
+  // سجلٍّ يقول «حُذفت قاعدة». فيُقاس وجودُها هنا.
+  logger.info("== شاشةُ عروض Medusa: مسموحةٌ لا مرفوضةٌ افتراضياً ==");
+
+  const promoRead = ruleFor("/promotions", "GET");
+  const promoWrite = ruleFor("/promotions", "POST");
+  const campaignRead = ruleFor("/campaigns", "GET");
+
+  promoRead && promoWrite
+    ? pass(
+        `«/promotions» مسموحٌ قراءةً (${promoRead.permission}) وكتابةً (${promoWrite.permission})`
+      )
+    : fail("«/promotions» بلا قاعدةٍ في الخريطة — وشاشةُ العروض في لوحة Medusa تُردّ بـ٤٠٣");
+  campaignRead
+    ? pass(`و«/campaigns» كذلك (${campaignRead.permission})`)
+    : fail("«/campaigns» بلا قاعدة — والحملاتُ جزءٌ من نفس الشاشة");
+  !isExempt("/promotions")
+    ? pass("وليست معفاةً — فالصلاحيةُ تُفحص لا تُتخطّى")
+    : fail("«/promotions» معفاةٌ من الفحص — يصل إليها أيُّ مديرٍ بلا صلاحية");
 
   // ── ٣) حرّاسُ القاعدة ──────────────────────────────────────────
   logger.info("== حرّاسُ القاعدة: الحدُّ لكل عميلٍ ودفترٌ لا يُمسّ ==");

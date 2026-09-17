@@ -338,6 +338,11 @@ first order**.
   **fixed-amount** coupon instead.
 - Deleting a policy does not erase customers' past redemptions — those
   are a separate ledger.
+- ℹ️ **"Buy two, get the third"** is created from **Medusa's own
+  promotions screen**, not from ours: pick the `buyget` promotion type,
+  then set the buy rule (what they purchase) and the target rule (what
+  gets discounted). We add no screen on top because the engine owns it
+  entirely.
 - 🔴 **The "priority" field does not order discounts.** The order in
   which discounts are calculated is decided by Medusa's engine alone
   (highest value first), and we have no hook into it — this was
