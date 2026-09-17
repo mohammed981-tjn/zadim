@@ -91,8 +91,37 @@ export default async function LocaleLayout({
       <body className="font-sans antialiased">
         <ServiceWorker />
         <div className="flex min-h-dvh flex-col">
+          {/*
+            تخطّي الترويسة — أوّلُ ما يقع عليه Tab، ولا يُرى حتى يُركَّز.
+
+            ── ولماذا يلزم وقد مرّ axe بلا مخالفة ──────────────────
+
+            قاعدةُ `bypass` في axe تُرضيها معالمُ الصفحة (`main`)، وهي
+            موجودة. لكنّ المعالمَ تخدم قارئَ الشاشة وحدَه: من يتنقّل
+            بلوحة المفاتيح **ولا يستعمل قارئاً** — إصابةُ يدٍ، أو رعشةٌ،
+            أو فأرةٌ معطّلة — يمرّ على الشعار والبحث والسلّة والحساب
+            ومبدّلِ اللغة **في كل صفحةٍ يفتحها**، خمسَ ضغطاتٍ قبل أوّل
+            منتج. فالفحصُ الآليّ لا يُغني عن المشي بلوحة المفاتيح.
+
+            و`sr-only` لا `hidden`: المخفيُّ بـ`display:none` لا يُركَّز
+            عليه أصلاً، فيصير الرابطُ حبراً.
+          */}
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:absolute focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-foreground focus:px-4 focus:py-2 focus:text-background"
+          >
+            {t(locale, "a11y.skipToContent")}
+          </a>
           <SiteHeader locale={locale} />
-          <main className="flex-1">{children}</main>
+          {/*
+            ⚠️ و`tabIndex={-1}` ليست زينة: الانتقالُ إلى معلمٍ غيرِ
+            قابلٍ للتركيز يحرّك شريطَ التمرير **ولا يحرّك التركيز** —
+            فتُضغط Tab بعده فيعود إلى الترويسة من أوّلها. فالرابطُ يبدو
+            عاملاً وهو لا يعمل.
+          */}
+          <main id="main" tabIndex={-1} className="flex-1 outline-none">
+            {children}
+          </main>
           <SiteFooter locale={locale} />
         </div>
       </body>

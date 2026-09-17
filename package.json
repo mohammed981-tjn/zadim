@@ -6,6 +6,7 @@
     "verify:ui": "node scripts/verify-ui.mjs"
   },
   "devDependencies": {
+    "axe-core": "^4.10.3",
     "lighthouse": "^12.8.2",
     "playwright": "^1.56.1"
   }

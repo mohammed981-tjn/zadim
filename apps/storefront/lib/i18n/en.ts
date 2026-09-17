@@ -7,6 +7,7 @@
  * half-translated release cannot ship quietly.
  */
 export const en: Record<string, string> = {
+  "a11y.skipToContent": "Skip to content",
   "site.name": "Zadim",
   "site.tagline": "Your Saudi store",
   "site.description": "Zadim is a Saudi online store offering carefully selected products and a refined shopping experience.",
