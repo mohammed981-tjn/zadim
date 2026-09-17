@@ -13,6 +13,7 @@ import { PAYMENTS_MODULE } from "../payments";
 import type PaymentsModuleService from "../payments/service";
 import { amount } from "./pricing";
 import { recordRedemptions } from "../promotions/apply";
+import { orderByPriority } from "../promotions/eligibility";
 import { claimFlash, releaseFlash } from "../promotions/flash";
 import { COUPON_POLICY_MODULE } from "../promotions";
 import type PromotionsPolicyService from "../promotions/service";
@@ -351,7 +352,24 @@ export async function runCheckout(
   // وصيغتان لرقمٍ واحد عميلان في نظر أيّ حدّ.
   const flashKey = String(national.phone || cart.email || cartId);
 
-  for (const code of couponCodesOf(cart)) {
+  // 🔴 وترتيبُ المطالبة ليس اعتباطاً.
+  //
+  // سلّةٌ فيها عرضان خاطفان وأحدُهما على آخر قطعة: أيُّهما يأخذها؟
+  // والترتيبُ اليوم ترتيبُ التسويات كما تأتي من المحرّك — غيرُ مضمونٍ
+  // ولا معلَن، فنفسُ السلّة تُعيد المحاولةَ بعد سقوطٍ فتُطالِب بعرضٍ
+  // آخر. فيُؤخذ من **رقم الأولوية الذي يضبطه المدير**، والأصغرُ أوّلاً.
+  //
+  // ⚠️ **وهذا الرقمُ لا يمسّ حسابَ الخصم**: ترتيبُ الخصومات في محرّك
+  // Medusa مبرمَجٌ (`sortByBuyGetType`: BUYGET أوّلاً ثم القيمةُ
+  // تنازلياً) ولا مدخلَ لنا فيه — قِيس في `verify-coupons.ts`، وشُرح
+  // في `docs/16-behavior-map.md` §٤ك.
+  const flashPriority = await policies.priorityMap();
+  const orderedCodes = orderByPriority(
+    couponCodesOf(cart).map((code) => ({ code })),
+    (c) => flashPriority.get(c)
+  ).map((c) => c.code);
+
+  for (const code of orderedCodes) {
     const sale = (await policies.flashByCode(code)) as any;
     if (!sale) continue;
 

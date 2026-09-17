@@ -74,8 +74,14 @@ export default async function verifyCoupons({ container }: ExecArgs) {
     ? pass("والمساوي للسقف يمرّ — الحدُّ حدٌّ لا أقلُّ منه")
     : fail("المساوي للسقف رُفض");
 
-  // ── ٢) ترتيبُ التطبيق — رقمٌ لا سلوكٌ ضمنيّ ────────────────────
-  logger.info("== ترتيبُ التطبيق: رقمٌ يضبطه المدير ==");
+  // ── ٢) ترتيبُ الأولوية — **ما يحكمه وما لا يحكمه** ────────────
+  //
+  // 🔴 ويُقال الحدُّ صراحةً هنا لأن اسمَ الحقل يغري بغيره: `priority`
+  // يحكم **ترتيبَ المطالبة بالتخفيضات الخاطفة** في مسار الإتمام
+  // (§٣ج من `orchestrate.ts`) — أيُّ عرضٍ يأخذ آخرَ قطعةٍ حين يجتمع
+  // عرضان في سلّة. و**لا يحكم حسابَ الخصم**، والقسمُ الذي يليه يقيس
+  // ذلك على المحرّك نفسِه لا على الظنّ.
+  logger.info("== ترتيبُ الأولوية: يحكم المطالبةَ لا حسابَ الخصم ==");
 
   const codes = [{ code: "B" }, { code: "A" }, { code: "C" }];
   const prio = new Map([["A", 300], ["B", 100]]);
@@ -87,6 +93,105 @@ export default async function verifyCoupons({ container }: ExecArgs) {
   DEFAULT_PRIORITY === 100
     ? pass("وما لا سياسةَ له يأخذ الافتراض")
     : fail("الافتراضُ تغيّر");
+
+  // ── ٢ب) 🔴 ترتيبُ الخصومات: قرارُ المحرّك لا قرارُنا ──────────
+  //
+  // ── لماذا يُقاس هذا أصلاً ───────────────────────────────────────
+  //
+  // لأن الخارطةَ حملت بنداً اسمُه «فرضُ الترتيب داخل computeActions».
+  // فقُرئ المحرّكُ قبل أن يُبنى شيء (`node_modules/@medusajs/promotion`):
+  // الترتيبُ مبرمَجٌ في `sortByBuyGetType` — BUYGET أوّلاً ثم قيمةُ
+  // `application_method` **تنازلياً** — والاستعلامُ نفسُه يرتّب
+  // `order: { application_method: { value: "DESC" } }`. **ولا مدخلَ**:
+  // لا خيارَ ولا خُطّافَ ولا تمريرَ ترتيبٍ من المنادي.
+  //
+  // ── وهل الترتيبُ يغيّر المالَ أصلاً؟ ────────────────────────────
+  //
+  // هذا هو السؤالُ الذي كان يجب أن يُسأل قبل بناء أيّ شيء. والجواب
+  // **يختلف باختلاف النوعين**، وقِيس على المحرّك:
+  //
+  //   مئويّتان    ⇒ تتبادلان: (١−٠٫٢)(١−٠٫١) = (١−٠٫١)(١−٠٫٢)
+  //   ثابتٌ ومئوية ⇒ **لا تتبادلان**، والفارقُ مالٌ حقيقيّ
+  //
+  // فالبندُ غيرُ قابلٍ للتنفيذ بلا **شقّ وحدةٍ أساسيةٍ في Medusa**،
+  // وأثرُه محصورٌ في حالةٍ واحدة. فلا يُبنى — ويُثبَّت السلوكُ هنا
+  // بقياسٍ ينكسر إن غيّرته ترقيةٌ، فلا يتغيّر مالُ العملاء صامتاً.
+  logger.info("== ترتيبُ الخصومات: مقيسٌ على المحرّك لا مفترَض ==");
+
+  const ordTag = `ORD${Date.now().toString(36).toUpperCase()}`;
+  const ordMade: string[] = [];
+  const mkPromo = async (suffix: string, type: string, value: number) => {
+    const [p] = (await promo.createPromotions([
+      {
+        code: `${ordTag}-${suffix}`,
+        type: "standard",
+        is_automatic: false,
+        status: "active",
+        application_method: {
+          type,
+          target_type: "items",
+          allocation: "each",
+          max_quantity: 10,
+          value,
+          currency_code: "sar",
+        },
+      },
+    ])) as any[];
+    ordMade.push(p.id);
+    return `${ordTag}-${suffix}`;
+  };
+
+  try {
+    const PCT20 = await mkPromo("PCT20", "percentage", 20);
+    const PCT10 = await mkPromo("PCT10", "percentage", 10);
+    const FIX3000 = await mkPromo("FIX3000", "fixed", 3000);
+
+    // بندٌ واحدٌ بمجموعٍ ١٠٠٠٠ — رقمٌ يجعل الحسابَ يُقرأ بالعين.
+    const ordItems = [
+      { id: "li_ord", quantity: 1, subtotal: 10000, original_total: 10000 },
+    ];
+    const totalOf = async (codesIn: string[]) => {
+      const acts = (await promo.computeActions(codesIn, {
+        items: ordItems,
+        currency_code: "sar",
+      })) as any[];
+      return {
+        sum: acts.reduce((n, a) => n + Number(a.amount ?? 0), 0),
+        byCode: new Map(acts.map((a) => [String(a.code), Number(a.amount ?? 0)])),
+      };
+    };
+
+    const mix = await totalOf([PCT20, FIX3000]);
+    const mixFlipped = await totalOf([FIX3000, PCT20]);
+
+    // ١) المدخلُ لا يُرتّب: نفسُ الرمزين بترتيبَين ⇒ نفسُ المبالغ.
+    mix.sum === mixFlipped.sum
+      ? pass(`ترتيبُ المدخل لا يغيّر شيئاً (${mix.sum} في الاتجاهين) — فالمحرّكُ يرتّب بنفسه`)
+      : fail(`ترتيبُ المدخل غيّر المجموع: ${mix.sum} ثم ${mixFlipped.sum}`);
+
+    // ٢) والثابتُ أوّلاً، والمئويةُ على **الباقي** لا على الأصل.
+    const fixAmt = mix.byCode.get(FIX3000) ?? 0;
+    const pctAmt = mix.byCode.get(PCT20) ?? 0;
+    fixAmt === 3000 && pctAmt === 1400
+      ? pass(`الثابتُ ٣٠٠٠ ثم ٢٠٪ على الباقي (٧٠٠٠) = ١٤٠٠ — المجموع ${mix.sum}`)
+      : fail(`المتوقّع ٣٠٠٠ و١٤٠٠، والمقيس ${fixAmt} و${pctAmt}`);
+
+    // ٣) 🔴 وهذا هو ثمنُ الترتيب: بالعكس لبلغ ٥٠٠٠.
+    //    (٢٠٪ من ١٠٠٠٠ = ٢٠٠٠، ثم ثابتُ ٣٠٠٠ على الباقي ٨٠٠٠.)
+    //    والفارقُ ٦٠٠ لصالح المتجر، **ولا مدخلَ لنا فيه**.
+    mix.sum === 4400
+      ? pass("والعكسُ كان سيبلغ ٥٠٠٠ — فالفارقُ ٦٠٠، وترتيبُ المحرّك في صالح المتجر")
+      : fail(`المجموعُ ${mix.sum} والمتوقّع ٤٤٠٠`);
+
+    // ٤) والمئويّتان تتبادلان — فلا ترتيبَ يُطلب أصلاً.
+    const two = await totalOf([PCT20, PCT10]);
+    const twoFlipped = await totalOf([PCT10, PCT20]);
+    two.sum === 2800 && twoFlipped.sum === 2800
+      ? pass("ومئويّتان تتبادلان: ٢٠٪ و١٠٪ = ٢٨٠٠ في الاتجاهين — فلا بندَ هنا أصلاً")
+      : fail(`المئويّتان: ${two.sum} و${twoFlipped.sum} والمتوقّع ٢٨٠٠`);
+  } finally {
+    for (const id of ordMade) await promo.deletePromotions([id]);
+  }
 
   // ── ٣) حرّاسُ القاعدة ──────────────────────────────────────────
   logger.info("== حرّاسُ القاعدة: الحدُّ لكل عميلٍ ودفترٌ لا يُمسّ ==");

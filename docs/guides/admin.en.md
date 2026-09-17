@@ -337,6 +337,16 @@ first order**.
   **fixed-amount** coupon instead.
 - Deleting a policy does not erase customers' past redemptions — those
   are a separate ledger.
+- 🔴 **The "priority" field does not order discounts.** The order in
+  which discounts are calculated is decided by Medusa's engine alone
+  (highest value first), and we have no hook into it — this was
+  measured. The one thing this number governs: **which flash sale gets
+  the last unit** when two flash offers meet in one cart; the lower
+  number claims first.
+- ℹ️ **And when a fixed-amount coupon meets a percentage one**: the
+  fixed amount comes off first, then the percentage is computed on the
+  **remainder**. On a 100-riyal cart, a 30 fixed plus 20% gives 44
+  riyals off, not 50.
 
 
 ---
