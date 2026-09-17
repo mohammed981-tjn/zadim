@@ -12,6 +12,7 @@ import type AccessModuleService from "../modules/access/service";
 import { isExempt, readCount, readField, ruleFor } from "../modules/access/permission-map";
 import { rateLimit } from "../modules/access/rate-limit";
 import { overlayTranslations } from "../modules/catalog/overlay";
+import { observe } from "../modules/observability/middleware";
 
 /**
  * حارسُ الصلاحيات وسجلُّ التدقيق — طبقةٌ واحدة على كل `/admin`.
@@ -237,14 +238,17 @@ export default defineMiddlewares({
     // ⚠️ وثلاثةُ مُطابِقاتٍ بصيغة `/x/*` لا أسماءٌ صريحة: قِيس في
     // المرحلة ١١ب أن `matcher: "/store/products"` لا يُطابق شيئاً —
     // لا نداءَ ولا خطأ. والحصرُ يقع داخل الوسيط بسوابق السياسات.
-    { matcher: "/auth/*", middlewares: [rateLimit] },
-    { matcher: "/store/*", middlewares: [rateLimit] },
+    //
+    // ⚠️ و`observe` **قبل الجميع**: سجلٌّ لا يرى إلا ما مرّ يُخفي
+    // بالضبط ما يُبحث عنه — موجةَ ٤٢٩ وموجةَ ٤٠٣.
+    { matcher: "/auth/*", middlewares: [observe, rateLimit] },
+    { matcher: "/store/*", middlewares: [observe, rateLimit] },
     {
       matcher: "/admin/*",
       // والترتيبُ مقصود: العدُّ قبل الصلاحية. فحصُ الصلاحية يقرأ
       // القاعدةَ مرّتين، وفيضٌ من نداءاتٍ مرفوضةٍ يُغرقها — فيصير
       // الحارسُ نفسُه طريقَ الإسقاط.
-      middlewares: [rateLimit, requirePermission, recordMutation],
+      middlewares: [observe, rateLimit, requirePermission, recordMutation],
     },
     {
       matcher: "/admin/catalog/images",
